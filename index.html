@@ -24,13 +24,14 @@
     grid-template-columns: var(--hud-w) auto var(--log-w);
     grid-template-areas: "hud map log";
     gap:12px; padding:12px;
-    overflow-x: hidden; /* prevent horizontal scroll leaks */
+    overflow-x: hidden;
   }
   .title { grid-column:1 / -1; font-weight:700; letter-spacing:.5px; color:var(--muted); font-size: 16px; margin-bottom: 6px; }
 
   .map { grid-area: map; place-self:start center; background:#0a0a0e; padding:8px; border:2px solid #2a2a33; border-radius:12px; image-rendering:pixelated; position:relative;
     max-width: 100%; min-width: 0; overflow: hidden; }
   .grid { display:grid; grid-template-columns:repeat(var(--grid-w), var(--cell)); grid-template-rows:repeat(var(--grid-h), var(--cell)); gap:var(--gap); user-select:none; -webkit-user-select:none; }
+
   .cell { width:var(--cell); height:var(--cell); background:#11131a; box-shadow: inset 0 0 0 calc(1px * var(--scale)) #06070a; border-radius:calc(2px * var(--scale)); position:relative; }
   .wall { background:#2b2f3a; } .floor { background:#171923; } .door { background:#3b2b1a; }
 
@@ -43,6 +44,7 @@
   .hpbar-fill { position:absolute; left:0; top:0; bottom:0; width:50%; background: linear-gradient(90deg, #28c76f, #25a36f); transition: width .2s ease, background .2s ease; }
   .hpbar-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; user-select:none; font-size: 12px; font-weight:700; color:#ffffff; text-shadow: 0 1px 0 rgba(0,0,0,.6); }
 
+  /* Entities */
   .player::after, .ally::after, .npc::after, .item::after, .monster::after, .chest::after, .altar::after, .trap-sprung::after {
     content:""; position:absolute; inset:20%; border-radius:calc(2px * var(--scale));
   }
@@ -134,7 +136,7 @@
 
   #yt-player { position:absolute; width:1px; height:1px; left:-9999px; top:-9999px; overflow:hidden; }
 
-  /* Cosmetics */
+  /* Cosmetics (unchanged) */
   .player.cos-aura-bone   { box-shadow: 0 0 0 3px rgba(160,210,255,.28) inset, 0 0 8px rgba(160,210,255,.35); }
   .player.cos-aura-shadow { box-shadow: 0 0 0 3px rgba(0,0,0,.4) inset, 0 0 10px rgba(0,0,0,.6); }
   .player.cos-aura-spark  { box-shadow: 0 0 0 3px rgba(255,255,160,.28) inset, 0 0 8px rgba(255,255,160,.35); }
@@ -152,41 +154,38 @@
   .mobile-tabs .tab { flex:1; text-align:center; padding:10px 12px; border-radius:10px; border:1px solid #2b2f3a; background:#0f1117; color:#f4f6ff; font:inherit; }
   .mobile-tabs .tab.active { background:#182030; border-color:#3b4b6b; }
 
-  /* Touch controls */
-  .touchpad {
-    position: fixed; left: 50%; transform: translateX(-50%);
-    bottom: clamp(8px, 3vh, 24px);
-    display: none; gap: 6px; z-index: 1100;
-    background: rgba(10,12,20,.6); border: 1px solid #2b2f3a; border-radius: 14px;
-    padding: 8px 10px; backdrop-filter: blur(4px);
-  }
-  .touchpad .row { display:flex; justify-content:center; gap:8px; margin: 4px 0; }
-  .touchpad .row.small .tp { font-size: 14px; padding: 10px 12px; }
-  .tp { font: inherit; color: var(--text); background:#0f1117; border:1px solid #2b2f3a; border-radius: 12px; padding: 12px 14px; min-width: 48px; min-height: 48px; }
-  .tp-big { min-width: 68px; }
+  /* ===== Inline D-Pad (beneath grid on mobile) ===== */
+  .dpad { display:none; margin-top:10px; }
+  .d-row { display:flex; justify-content:center; gap:8px; margin: 4px 0; }
+  .d-btn { font: inherit; color: var(--text); background:#0f1117; border:1px solid #2b2f3a; border-radius: 12px; padding: 12px 14px; min-width: 48px; min-height: 48px; }
+  .d-big { min-width: 68px; }
 
-  /* Compact action bar for mobile */
-  .actionbar{
-    position: fixed;
-    left: 50%; transform: translateX(-50%);
-    bottom: clamp(8px, env(safe-area-inset-bottom) + 8px, 24px);
-    display: none; /* shown in gesture mode on mobile */
-    gap: 6px; z-index: 1100;
-    background: rgba(10,12,20,.6);
-    border: 1px solid #2b2f3a;
-    border-radius: 14px;
-    padding: 6px 8px;
-    backdrop-filter: blur(4px);
+  /* ===== Notification banners ===== */
+  .banners {
+    position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 8px);
+    transform: translateX(-50%); z-index: 2000; width: min(92vw, 640px);
+    display: grid; gap: 8px; pointer-events: none;
   }
-  .ab{
-    font: inherit; color: var(--text);
-    background:#0f1117; border:1px solid #2b2f3a; border-radius: 12px;
-    min-width: 44px; min-height: 44px; padding: 6px 10px;
+  .banner {
+    pointer-events: auto;
+    background: #0f1117; border:1px solid #2b2f3a; border-radius: 12px;
+    padding: 8px 12px; box-shadow: 0 6px 16px rgba(0,0,0,.35);
+    display:flex; gap:8px; align-items:flex-start; animation: slideIn .18s ease-out;
   }
+  .banner .dot { width:10px; height:10px; border-radius:50%; margin-top:3px; }
+  .banner .txt { font-size: 13px; line-height:1.25; color:#e9eef7; }
+  .banner .close { margin-left:auto; background:transparent; border:0; color:#9aa0a6; font-size:14px; cursor:pointer; }
+  .banner.dialog { border-color:#2f3b52; }
+  .banner.dialog .dot { background:#7fb7ff; }
+  .banner.combat { border-color:#4a2a31; }
+  .banner.combat .dot { background:#ff6b6b; }
+  .banner.loot   { border-color:#2f3a2f; }
+  .banner.loot .dot { background:#7fd962; }
+  .banner.system { border-color:#2a2a2a; }
+  .banner.system .dot { background:#bdbdbd; }
+  @keyframes slideIn { from { opacity:0; transform: translate(-50%, -6px); } to { opacity:1; transform: translate(-50%, 0); } }
 
   /* ====== BREAKPOINTS ====== */
-
-  /* Medium screens: allow columns to shrink & keep map clamped */
   @media (max-width: 1200px) {
     .wrap {
       grid-template-columns: minmax(0,1fr) minmax(0, calc(var(--cell)*var(--grid-w) + 16px));
@@ -218,13 +217,8 @@
     .choices { gap:8px; }
     .choice-btn, .overlay .actions .btn { width:100%; min-height: 44px; font-size: 14px; }
     .btn { min-height: 44px; }
-    .choice-btn[data-hint]::after { display:none; }
-  }
 
-  /* Mobile defaults: show compact actionbar, hide D-pad (JS can toggle) */
-  @media (pointer: coarse), (max-width: 900px) {
-    .touchpad { display: none; }
-    .actionbar { display: flex; }
+    .dpad { display:block; } /* show inline D-pad on phones */
   }
 
   @supports (padding: max(0px)) {
@@ -233,6 +227,9 @@
 </style>
 </head>
 <body>
+  <!-- Notification banner stack -->
+  <div id="banners" class="banners" aria-live="polite" aria-atomic="true"></div>
+
   <div class="wrap">
     <div class="title">Mini D&D Pixel Crawler</div>
 
@@ -257,7 +254,6 @@
         <button id="musicBtn" class="btn">🎵 Music: On</button>
         <button id="cosBtn" class="btn">✨ Cosmetics</button>
         <button id="codexBtn" class="btn">📖 Codex</button>
-        <button id="ctrlBtn" class="btn">🎮 Controls: Gestures</button>
       </div>
 
       <div class="sound-row" style="font-size:12px;color:#9aa0a6">
@@ -285,6 +281,26 @@
         <div id="hptext" class="hpbar-text">HP 10/10</div>
       </div>
       <div id="grid" class="grid"></div>
+
+      <!-- Inline D-Pad (mobile) -->
+      <div id="dpad" class="dpad" aria-hidden="true">
+        <div class="d-row">
+          <button data-a="up"    class="d-btn" aria-label="Move Up">▲</button>
+        </div>
+        <div class="d-row">
+          <button data-a="left"  class="d-btn" aria-label="Move Left">◀</button>
+          <button data-a="use"   class="d-btn d-big" title="Talk/Use (E)" aria-label="Use">E</button>
+          <button data-a="right" class="d-btn" aria-label="Move Right">▶</button>
+        </div>
+        <div class="d-row">
+          <button data-a="down"  class="d-btn" aria-label="Move Down">▼</button>
+        </div>
+        <div class="d-row">
+          <button data-a="fight" class="d-btn" aria-label="Fight">F</button>
+          <button data-a="pick"  class="d-btn" aria-label="Pick up">␣</button>
+          <button data-a="heal"  class="d-btn" aria-label="Heal">H</button>
+        </div>
+      </div>
     </div>
 
     <div class="panel" id="logPanel">
@@ -316,34 +332,6 @@
     </div>
   </div>
 
-  <!-- Touch controls (toggleable on mobile) -->
-  <div id="touchpad" class="touchpad" aria-hidden="true">
-    <div class="row">
-      <button data-a="up"    class="tp tp-up" aria-label="Move Up">▲</button>
-    </div>
-    <div class="row">
-      <button data-a="left"  class="tp" aria-label="Move Left">◀</button>
-      <button data-a="use"   class="tp tp-big" title="Talk/Use (E)" aria-label="Use">E</button>
-      <button data-a="right" class="tp" aria-label="Move Right">▶</button>
-    </div>
-    <div class="row">
-      <button data-a="down"  class="tp tp-down" aria-label="Move Down">▼</button>
-    </div>
-    <div class="row small">
-      <button data-a="fight" class="tp" aria-label="Fight">F</button>
-      <button data-a="pick"  class="tp" aria-label="Pick up">␣</button>
-      <button data-a="heal"  class="tp" aria-label="Heal">H</button>
-    </div>
-  </div>
-
-  <!-- Compact mobile action bar (gesture mode) -->
-  <div id="actionbar" class="actionbar" aria-hidden="true">
-    <button data-a="use"   class="ab" title="Talk/Use (E)">E</button>
-    <button data-a="fight" class="ab" title="Fight (F)">F</button>
-    <button data-a="pick"  class="ab" title="Pick up (Space)">␣</button>
-    <button data-a="heal"  class="ab" title="Heal (H)">H</button>
-  </div>
-
   <!-- Hidden YouTube player target -->
   <div id="yt-player" aria-hidden="true"></div>
   <script src="https://www.youtube.com/iframe_api"></script>
@@ -363,7 +351,7 @@ const W=16,H=12, TILES={FLOOR:0,WALL:1,DOOR:2}, VISION=6;
 const player = { level: 1, x:2,y:2, hp:10,maxHp:10, ac:12, str:2,dex:1,prof:2, inventory:[], buff:{ac:0,attack:0}, gold:0 };
 const ally   = { active:false, name:"Nyx", x:null, y:null, tint:"#ff9bf3" };
 
-/* ======= Meta / Daily / Codex ======= */
+/* ===== Meta / Daily / Codex ===== */
 function loadMeta(){ try { return JSON.parse(localStorage.getItem('mini_meta') || '{}'); } catch(e){ return {}; } }
 function saveMeta(){ localStorage.setItem('mini_meta', JSON.stringify(META)); }
 const META = Object.assign(loadMeta(), { favor:0, hpBonus:0, acBonus:0, startPotion:0, ach:{}, cosm:{ unlocks:{}, active:{ aura:null, hat:null, trail:null } }, codex:{ monsters:{}, npcs:{}, items:{}, locations:{} } });
@@ -391,11 +379,6 @@ const LORE = {
   locations:{ start:"Where it starts.", hall:"Shady hall.", crypt:"Bone storage." }
 };
 function codexDiscover(cat, id, name){ const C = META.codex[cat]||(META.codex[cat]={}); if(!C[id]){ C[id]={ name:name||id, seen:true, count:0 }; saveMeta(); lootMsg(`Codex updated: ${name||id}`); } }
-
-/* ===== Controls settings (mobile gestures vs D-pad) ===== */
-function loadSettings(){ try { return JSON.parse(localStorage.getItem('mini_settings')||'{}'); } catch(e){ return {}; } }
-function saveSettings(){ localStorage.setItem('mini_settings', JSON.stringify(SETTINGS)); }
-const SETTINGS = Object.assign({ controls: 'gesture' }, loadSettings()); // 'gesture' | 'dpad'
 
 /* ====== Maps / Worlds ====== */
 function makeSeen(){ return Array.from({length:H},()=>Array(W).fill(false)); }
@@ -484,7 +467,7 @@ const soundBtn=document.getElementById('soundBtn'), musicBtn=document.getElement
 const lvlupEl=document.getElementById('lvlup'), lvlupDetails=document.getElementById('lvlup-details');
 const hpFill = document.getElementById('hpfill'); const hpText = document.getElementById('hptext');
 const dlgEl = document.getElementById('dialog'); const dlgTitle = document.getElementById('dialog-title'); const dlgText = document.getElementById('dialog-text'); const dlgChoices = document.getElementById('dialog-choices');
-const ctrlBtn = document.getElementById('ctrlBtn'); const actionbar = document.getElementById('actionbar');
+const bannersEl = document.getElementById('banners');
 
 /* ===== Rendering ===== */
 const stepTrail=[];
@@ -557,12 +540,35 @@ function hasLOS(x0,y0,x1,y1){
   return true;
 }
 
+/* ===== Notification banners ===== */
+function isLogHidden(){
+  const el = document.getElementById('logPanel');
+  if (!el) return false;
+  const cs = getComputedStyle(el);
+  return cs.display === 'none' || cs.visibility === 'hidden' || el.offsetParent === null;
+}
+function banner(text, kind='system', timeout=2800){
+  const b = document.createElement('div'); b.className = `banner ${kind}`;
+  b.innerHTML = `<div class="dot"></div><div class="txt">${escapeHTML(text)}</div><button class="close" aria-label="Dismiss">✕</button>`;
+  const kill = ()=>{ if(!b.parentNode) return; b.parentNode.removeChild(b); };
+  b.querySelector('.close').addEventListener('click', kill);
+  bannersEl.appendChild(b);
+  setTimeout(kill, timeout);
+}
+
 /* ===== Log & Dialog ===== */
 function logScript({mode="system",speaker="",text="",tint=""}){
   const entry=document.createElement('div'); entry.className=`entry ${mode}`;
   const face=document.createElement('div'); face.className='portrait'; face.style.background=tint||({dialog:'#7fb7ff',combat:'#ff6b6b',loot:'#7fd962',system:'#2b2b2b'}[mode]||'#2b2b2b');
   const bubble=document.createElement('div'); bubble.className='bubble'; bubble.innerHTML = speaker ? `<span class="speaker">${escapeHTML(speaker)}:</span> ${escapeHTML(text)}` : `${escapeHTML(text)}`;
-  entry.appendChild(face); entry.appendChild(bubble); logEl.appendChild(entry); logEl.scrollTop=logEl.scrollHeight; return {entry,bubble};
+  entry.appendChild(face); entry.appendChild(bubble); logEl.appendChild(entry); logEl.scrollTop=logEl.scrollHeight;
+
+  // Also show as a banner when Script is hidden (mobile default)
+  if (isLogHidden()){
+    const msg = speaker ? `${speaker}: ${text}` : text;
+    banner(msg, mode);
+  }
+  return {entry,bubble};
 }
 const narrate = (t)=>logScript({mode:"system",text:t});
 const say     = (who,t,tint)=>{ sfx('talk'); lastModalLine = { who, text: t, tint }; return logScript({mode:"dialog",speaker:who,text:t,tint}); };
@@ -581,14 +587,11 @@ function dlgShow({ title="Conversation", text="", options=null }) {
     const cont=document.createElement('button'); cont.className='btn'; cont.textContent='Continue'; cont.addEventListener('click',()=>advanceDialog()); dlgChoices.appendChild(cont);
     activeChoice=null; waitingOnChoice=false;
   }
-  document.body.style.overflow = 'hidden';      /* lock background scroll */
+  document.body.style.overflow = 'hidden';
   dlgEl.classList.add('show');
   const first=dlgChoices.querySelector('button'); if(first) first.focus();
 }
-function dlgHide(){
-  dlgEl.classList.remove('show');
-  document.body.style.overflow = '';            /* unlock scroll */
-}
+function dlgHide(){ dlgEl.classList.remove('show'); document.body.style.overflow=''; }
 dlgChoices.addEventListener('click', (e)=>{ const btn=e.target.closest('button[data-idx]'); if(!btn) return; chooseOption(+btn.getAttribute('data-idx')); });
 document.getElementById('dialog-leave').addEventListener('click', ()=>{ dlgHide(); state="explore"; activeDialog=null; activeChoice=null; waitingOnChoice=false; lastModalLine=null; });
 
@@ -628,7 +631,12 @@ window.addEventListener('keyup', (e)=>keys.delete(e.key));
 document.getElementById('cosBtn').addEventListener('click', ()=>openCosmetics());
 document.getElementById('codexBtn').addEventListener('click', ()=>openCodex());
 
-document.getElementById('inventory').addEventListener('click', (e)=>{ const btn=e.target.closest('.inv-item'); if(!btn) return; const id=btn.getAttribute('data-id'); const item=player.inventory.find(i=>i.id===id); if(!item) return; if(state==="combat"){ narrate("Too hectic to rummage your bag mid-swing. (Use potions after the fight.)"); return; } if(typeof item.use==="function"){ useItemById(id); draw(); } });
+document.getElementById('inventory').addEventListener('click', (e)=>{
+  const btn=e.target.closest('.inv-item'); if(!btn) return;
+  const id=btn.getAttribute('data-id'); const item=player.inventory.find(i=>i.id===id); if(!item) return;
+  if(state==="combat"){ narrate("Too hectic to rummage your bag mid-swing. (Use potions after the fight.)"); return; }
+  if(typeof item.use==="function"){ useItemById(id); draw(); }
+});
 
 function handleInput(key){
   if(state==="levelup"){ return; }
@@ -837,98 +845,30 @@ function sfx(kind){
   }
 }
 
-/* ===== Responsive scaling & controls mode ===== */
+/* ===== Responsive scaling ===== */
 function clampNum(n, min, max){ return Math.max(min, Math.min(max, n)); }
 function fitScale(){
   // Keep desktop visuals unchanged
   const isDesktop = window.matchMedia('(min-width: 1200px)').matches && window.matchMedia('(pointer: fine)').matches;
   if (isDesktop) { document.documentElement.style.setProperty('--scale', '3'); return; }
 
-  // Mobile/tablet: compute scale from viewport (not container)
   const vw = Math.min(window.innerWidth, document.documentElement.clientWidth);
-  const vh = window.innerHeight; // ok for modern mobile browsers
+  const vh = window.innerHeight;
 
-  // grid’s unscaled pixel size (16px cells, 1px gaps)
-  const baseCell = 16;
-  const baseGap  = 1;
+  const baseCell = 16, baseGap = 1;
   const targetW = baseCell * 16 + baseGap * (16 - 1);
   const targetH = baseCell * 12 + baseGap * (12 - 1);
 
-  // coarse padding budget for title/HUD/HP bar + controls
+  // Reserve space for inline D-pad (beneath the grid)
   const padW = 24;
-  const padH = (SETTINGS.controls === 'gesture') ? 160 : 240; // compact bar vs D-pad
+  const padH = 220; // approx height of the dpad + margins
 
   const availW = Math.max(0, vw - padW);
   const availH = Math.max(0, vh - padH);
 
-  let scaleFromWidth  = Math.floor(availW / targetW);
-  let scaleFromHeight = Math.floor(availH / targetH);
-  let scale = Math.min(scaleFromWidth, scaleFromHeight);
-
-  // allow 1× on very small phones; cap at 8×
+  let scale = Math.min(Math.floor(availW / targetW), Math.floor(availH / targetH));
   scale = clampNum(scale, 1, 8);
-
   document.documentElement.style.setProperty('--scale', String(scale));
-}
-
-function applyControlsMode(){
-  const isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 900;
-  const tp = document.getElementById('touchpad');
-  const ab = document.getElementById('actionbar');
-  const btn = document.getElementById('ctrlBtn');
-
-  if (!isMobile){
-    if (tp) tp.style.display = 'none';
-    if (ab) ab.style.display = 'none';
-    if (btn) btn.textContent = '🎮 Controls: Keyboard';
-    return;
-  }
-  const useDpad = SETTINGS.controls === 'dpad';
-  if (tp) tp.style.display = useDpad ? 'inline-block' : 'none';
-  if (ab) ab.style.display = useDpad ? 'none' : 'flex';
-  if (btn) btn.textContent = useDpad ? '🎮 Controls: D-pad' : '🎮 Controls: Gestures';
-  fitScale(); // recalibrate map scale budget
-}
-
-function initResponsive(){
-  requestAnimationFrame(fitScale);
-  window.addEventListener('resize', ()=>{ fitScale(); applyControlsMode(); }, { passive:true });
-  window.addEventListener('orientationchange', () => setTimeout(()=>{ fitScale(); applyControlsMode(); }, 60), { passive:true });
-  window.addEventListener('touchstart', ensureAudio, { once:true, passive:true });
-
-  const tp = document.getElementById('touchpad');
-  if (tp){
-    tp.addEventListener('click', (e)=>{
-      const b = e.target.closest('button[data-a]'); if (!b) return;
-      const act = b.getAttribute('data-a');
-      switch(act){
-        case 'up':    tryMove(0, -1); break;
-        case 'down':  tryMove(0,  1); break;
-        case 'left':  tryMove(-1, 0); break;
-        case 'right': tryMove( 1, 0); break;
-        case 'use':   tryUse(); break;
-        case 'fight': tryFight(); break;
-        case 'pick':  tryPickup(); break;
-        case 'heal':  tryDrinkPotion(); break;
-      }
-    });
-  }
-
-  // swipe to move on map
-  let t0=null;
-  document.querySelector('.map').addEventListener('touchstart', (e)=>{
-    if (!e.touches[0]) return; t0 = { x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now() };
-  }, {passive:true});
-  document.querySelector('.map').addEventListener('touchend', (e)=>{
-    if (!t0) return;
-    const dx=(e.changedTouches[0]?.clientX || t0.x) - t0.x;
-    const dy=(e.changedTouches[0]?.clientY || t0.y) - t0.y;
-    const ax=Math.abs(dx), ay=Math.abs(dy); const dt=Date.now()-t0.t; t0=null;
-    if (dt>400 || Math.max(ax,ay)<24) return;
-    if (ax>ay) { tryMove(dx>0?1:-1,0); } else { tryMove(0, dy>0?1:-1); }
-  }, {passive:true});
-
-  applyControlsMode();
 }
 
 /* ===== Mobile Tabs ===== */
@@ -952,33 +892,54 @@ function initMobileTabs(){
   setTab('bag');
 }
 
-/* ===== Controls toggle + actionbar wiring ===== */
-ctrlBtn.addEventListener('click', ()=>{
-  SETTINGS.controls = (SETTINGS.controls === 'gesture') ? 'dpad' : 'gesture';
-  saveSettings();
-  applyControlsMode();
-});
-actionbar.addEventListener('click', (e)=>{
-  const b = e.target.closest('button[data-a]'); if (!b) return;
-  const act = b.getAttribute('data-a');
-  switch(act){
-    case 'use':   tryUse(); break;
-    case 'fight': tryFight(); break;
-    case 'pick':  tryPickup(); break;
-    case 'heal':  tryDrinkPotion(); break;
-  }
-});
+/* ===== Init & D-pad wiring ===== */
+function initResponsive(){
+  requestAnimationFrame(fitScale);
+  window.addEventListener('resize', fitScale, { passive:true });
+  window.addEventListener('orientationchange', () => setTimeout(fitScale, 60), { passive:true });
+  window.addEventListener('touchstart', ensureAudio, { once:true, passive:true });
+
+  // swipe-to-move on map (kept as a convenience)
+  let t0=null;
+  document.querySelector('.map').addEventListener('touchstart', (e)=>{
+    if (!e.touches[0]) return; t0 = { x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now() };
+  }, {passive:true});
+  document.querySelector('.map').addEventListener('touchend', (e)=>{
+    if (!t0) return;
+    const dx=(e.changedTouches[0]?.clientX || t0.x) - t0.x;
+    const dy=(e.changedTouches[0]?.clientY || t0.y) - t0.y;
+    const ax=Math.abs(dx), ay=Math.abs(dy); const dt=Date.now()-t0.t; t0=null;
+    if (dt>400 || Math.max(ax,ay)<24) return;
+    if (ax>ay) { tryMove(dx>0?1:-1,0); } else { tryMove(0, dy>0?1:-1); }
+  }, {passive:true});
+
+  // Inline D-pad (below grid)
+  document.getElementById('dpad').addEventListener('click', (e)=>{
+    const b = e.target.closest('button[data-a]'); if (!b) return;
+    const act = b.getAttribute('data-a');
+    switch(act){
+      case 'up':    tryMove(0, -1); break;
+      case 'down':  tryMove(0,  1); break;
+      case 'left':  tryMove(-1, 0); break;
+      case 'right': tryMove( 1, 0); break;
+      case 'use':   tryUse(); break;
+      case 'fight': tryFight(); break;
+      case 'pick':  tryPickup(); break;
+      case 'heal':  tryDrinkPotion(); break;
+    }
+  });
+}
 
 /* ===== Boot ===== */
 function bootstrap(){
   // meta bonuses (if any)
   player.maxHp += META.hpBonus||0; player.ac += META.acBonus||0; player.hp = player.maxHp;
   for (let i=0;i<(META.startPotion||0);i++){ player.inventory.push({ id:`meta-potion-${i}-${Date.now()}`, name:"Small Potion (+4 HP)", use:()=>heal(4) }); }
-  draw(); initResponsive(); initMobileTabs(); applyControlsMode();
+  draw(); initResponsive(); initMobileTabs();
   narrate("You awaken in a dim stone room.");
   say("Sage","Approach and speak, traveler.","#7fb7ff");
   addQuest("defeat-goblin","Defeat the Goblin","Slay the red fiend lurking to the east.");
-  narrate("Move: Arrows/WASD (or swipe). Tap E/F/␣/H on the action bar. Toggle D-pad via the Controls button.");
+  narrate("Move: Arrows/WASD or the D-pad below. E/F/␣/H for actions.");
 }
 bootstrap();
 
@@ -988,7 +949,7 @@ function heal(amount){
   const gained=player.hp-before; if(gained>0) narrate(`Healed ${gained} HP.`); renderHUD();
 }
 
-/* ===== Ally recruit (kept near end for clarity) ===== */
+/* ===== Ally recruit ===== */
 function recruitNyx(){
   if (ally.active){ say("Nyx","Already on your flank."); return; }
   ally.active = true; ally.x = player.x; ally.y = player.y;
