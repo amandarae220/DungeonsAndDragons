@@ -165,6 +165,25 @@
   .tp { font: inherit; color: var(--text); background:#0f1117; border:1px solid #2b2f3a; border-radius: 12px; padding: 12px 14px; min-width: 48px; min-height: 48px; }
   .tp-big { min-width: 68px; }
 
+  /* Compact action bar for mobile */
+  .actionbar{
+    position: fixed;
+    left: 50%; transform: translateX(-50%);
+    bottom: clamp(8px, env(safe-area-inset-bottom) + 8px, 24px);
+    display: none; /* shown in gesture mode on mobile */
+    gap: 6px; z-index: 1100;
+    background: rgba(10,12,20,.6);
+    border: 1px solid #2b2f3a;
+    border-radius: 14px;
+    padding: 6px 8px;
+    backdrop-filter: blur(4px);
+  }
+  .ab{
+    font: inherit; color: var(--text);
+    background:#0f1117; border:1px solid #2b2f3a; border-radius: 12px;
+    min-width: 44px; min-height: 44px; padding: 6px 10px;
+  }
+
   /* ====== BREAKPOINTS ====== */
 
   /* Medium screens: allow columns to shrink & keep map clamped */
@@ -202,7 +221,11 @@
     .choice-btn[data-hint]::after { display:none; }
   }
 
-  @media (pointer: coarse), (max-width: 900px) { .touchpad { display: inline-block; } }
+  /* Mobile defaults: show compact actionbar, hide D-pad (JS can toggle) */
+  @media (pointer: coarse), (max-width: 900px) {
+    .touchpad { display: none; }
+    .actionbar { display: flex; }
+  }
 
   @supports (padding: max(0px)) {
     body { padding-top: max(0px, env(safe-area-inset-top)); padding-bottom: max(0px, env(safe-area-inset-bottom)); }
@@ -234,6 +257,7 @@
         <button id="musicBtn" class="btn">🎵 Music: On</button>
         <button id="cosBtn" class="btn">✨ Cosmetics</button>
         <button id="codexBtn" class="btn">📖 Codex</button>
+        <button id="ctrlBtn" class="btn">🎮 Controls: Gestures</button>
       </div>
 
       <div class="sound-row" style="font-size:12px;color:#9aa0a6">
@@ -292,7 +316,7 @@
     </div>
   </div>
 
-  <!-- Touch controls (shown on mobile/tablet) -->
+  <!-- Touch controls (toggleable on mobile) -->
   <div id="touchpad" class="touchpad" aria-hidden="true">
     <div class="row">
       <button data-a="up"    class="tp tp-up" aria-label="Move Up">▲</button>
@@ -310,6 +334,14 @@
       <button data-a="pick"  class="tp" aria-label="Pick up">␣</button>
       <button data-a="heal"  class="tp" aria-label="Heal">H</button>
     </div>
+  </div>
+
+  <!-- Compact mobile action bar (gesture mode) -->
+  <div id="actionbar" class="actionbar" aria-hidden="true">
+    <button data-a="use"   class="ab" title="Talk/Use (E)">E</button>
+    <button data-a="fight" class="ab" title="Fight (F)">F</button>
+    <button data-a="pick"  class="ab" title="Pick up (Space)">␣</button>
+    <button data-a="heal"  class="ab" title="Heal (H)">H</button>
   </div>
 
   <!-- Hidden YouTube player target -->
@@ -359,6 +391,11 @@ const LORE = {
   locations:{ start:"Where it starts.", hall:"Shady hall.", crypt:"Bone storage." }
 };
 function codexDiscover(cat, id, name){ const C = META.codex[cat]||(META.codex[cat]={}); if(!C[id]){ C[id]={ name:name||id, seen:true, count:0 }; saveMeta(); lootMsg(`Codex updated: ${name||id}`); } }
+
+/* ===== Controls settings (mobile gestures vs D-pad) ===== */
+function loadSettings(){ try { return JSON.parse(localStorage.getItem('mini_settings')||'{}'); } catch(e){ return {}; } }
+function saveSettings(){ localStorage.setItem('mini_settings', JSON.stringify(SETTINGS)); }
+const SETTINGS = Object.assign({ controls: 'gesture' }, loadSettings()); // 'gesture' | 'dpad'
 
 /* ====== Maps / Worlds ====== */
 function makeSeen(){ return Array.from({length:H},()=>Array(W).fill(false)); }
@@ -447,6 +484,7 @@ const soundBtn=document.getElementById('soundBtn'), musicBtn=document.getElement
 const lvlupEl=document.getElementById('lvlup'), lvlupDetails=document.getElementById('lvlup-details');
 const hpFill = document.getElementById('hpfill'); const hpText = document.getElementById('hptext');
 const dlgEl = document.getElementById('dialog'); const dlgTitle = document.getElementById('dialog-title'); const dlgText = document.getElementById('dialog-text'); const dlgChoices = document.getElementById('dialog-choices');
+const ctrlBtn = document.getElementById('ctrlBtn'); const actionbar = document.getElementById('actionbar');
 
 /* ===== Rendering ===== */
 const stepTrail=[];
@@ -799,7 +837,7 @@ function sfx(kind){
   }
 }
 
-/* ===== Responsive scaling ===== */
+/* ===== Responsive scaling & controls mode ===== */
 function clampNum(n, min, max){ return Math.max(min, Math.min(max, n)); }
 function fitScale(){
   // Keep desktop visuals unchanged
@@ -816,9 +854,9 @@ function fitScale(){
   const targetW = baseCell * 16 + baseGap * (16 - 1);
   const targetH = baseCell * 12 + baseGap * (12 - 1);
 
-  // coarse padding budget for title/HUD/HP bar/touchpad
+  // coarse padding budget for title/HUD/HP bar + controls
   const padW = 24;
-  const padH = 240;
+  const padH = (SETTINGS.controls === 'gesture') ? 160 : 240; // compact bar vs D-pad
 
   const availW = Math.max(0, vw - padW);
   const availH = Math.max(0, vh - padH);
@@ -832,10 +870,30 @@ function fitScale(){
 
   document.documentElement.style.setProperty('--scale', String(scale));
 }
+
+function applyControlsMode(){
+  const isMobile = window.matchMedia('(pointer: coarse)').matches || window.innerWidth <= 900;
+  const tp = document.getElementById('touchpad');
+  const ab = document.getElementById('actionbar');
+  const btn = document.getElementById('ctrlBtn');
+
+  if (!isMobile){
+    if (tp) tp.style.display = 'none';
+    if (ab) ab.style.display = 'none';
+    if (btn) btn.textContent = '🎮 Controls: Keyboard';
+    return;
+  }
+  const useDpad = SETTINGS.controls === 'dpad';
+  if (tp) tp.style.display = useDpad ? 'inline-block' : 'none';
+  if (ab) ab.style.display = useDpad ? 'none' : 'flex';
+  if (btn) btn.textContent = useDpad ? '🎮 Controls: D-pad' : '🎮 Controls: Gestures';
+  fitScale(); // recalibrate map scale budget
+}
+
 function initResponsive(){
   requestAnimationFrame(fitScale);
-  window.addEventListener('resize', fitScale, { passive:true });
-  window.addEventListener('orientationchange', () => setTimeout(fitScale, 60), { passive:true });
+  window.addEventListener('resize', ()=>{ fitScale(); applyControlsMode(); }, { passive:true });
+  window.addEventListener('orientationchange', () => setTimeout(()=>{ fitScale(); applyControlsMode(); }, 60), { passive:true });
   window.addEventListener('touchstart', ensureAudio, { once:true, passive:true });
 
   const tp = document.getElementById('touchpad');
@@ -869,6 +927,8 @@ function initResponsive(){
     if (dt>400 || Math.max(ax,ay)<24) return;
     if (ax>ay) { tryMove(dx>0?1:-1,0); } else { tryMove(0, dy>0?1:-1); }
   }, {passive:true});
+
+  applyControlsMode();
 }
 
 /* ===== Mobile Tabs ===== */
@@ -892,16 +952,33 @@ function initMobileTabs(){
   setTab('bag');
 }
 
+/* ===== Controls toggle + actionbar wiring ===== */
+ctrlBtn.addEventListener('click', ()=>{
+  SETTINGS.controls = (SETTINGS.controls === 'gesture') ? 'dpad' : 'gesture';
+  saveSettings();
+  applyControlsMode();
+});
+actionbar.addEventListener('click', (e)=>{
+  const b = e.target.closest('button[data-a]'); if (!b) return;
+  const act = b.getAttribute('data-a');
+  switch(act){
+    case 'use':   tryUse(); break;
+    case 'fight': tryFight(); break;
+    case 'pick':  tryPickup(); break;
+    case 'heal':  tryDrinkPotion(); break;
+  }
+});
+
 /* ===== Boot ===== */
 function bootstrap(){
   // meta bonuses (if any)
   player.maxHp += META.hpBonus||0; player.ac += META.acBonus||0; player.hp = player.maxHp;
   for (let i=0;i<(META.startPotion||0);i++){ player.inventory.push({ id:`meta-potion-${i}-${Date.now()}`, name:"Small Potion (+4 HP)", use:()=>heal(4) }); }
-  draw(); initResponsive(); initMobileTabs();
+  draw(); initResponsive(); initMobileTabs(); applyControlsMode();
   narrate("You awaken in a dim stone room.");
   say("Sage","Approach and speak, traveler.","#7fb7ff");
   addQuest("defeat-goblin","Defeat the Goblin","Slay the red fiend lurking to the east.");
-  narrate("Move: Arrows/WASD (or swipe / D-pad). E talk/use. ␣ pick up. F fight. H heal. Enter continue. 1–9 choose. M music.");
+  narrate("Move: Arrows/WASD (or swipe). Tap E/F/␣/H on the action bar. Toggle D-pad via the Controls button.");
 }
 bootstrap();
 
@@ -909,6 +986,13 @@ bootstrap();
 function heal(amount){
   const before=player.hp; player.hp=Math.min(player.maxHp, player.hp+amount);
   const gained=player.hp-before; if(gained>0) narrate(`Healed ${gained} HP.`); renderHUD();
+}
+
+/* ===== Ally recruit (kept near end for clarity) ===== */
+function recruitNyx(){
+  if (ally.active){ say("Nyx","Already on your flank."); return; }
+  ally.active = true; ally.x = player.x; ally.y = player.y;
+  narrate("Nyx joins your quest. You gain flanking advantage when boxing foes.");
 }
 </script>
 </body>
