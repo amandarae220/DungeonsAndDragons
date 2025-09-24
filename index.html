@@ -1,0 +1,915 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Mini D&D Pixel Crawler</title>
+<style>
+  :root {
+    --grid-w: 16; --grid-h: 12; --scale: 3; /* Desktop stays 3 */
+    --cell: calc(16px * var(--scale)); --gap: calc(1px * var(--scale));
+    --bg: #1c1c22; --hud: #0e0e12; --panel: #15151a; --text: #e8e8f0; --muted: #9aa0a6;
+    --accent: #7fd962; --danger: #ff6b6b; --info: #7fb7ff;
+    --hud-w: 320px; --log-w: 320px; /* fixed side panels on desktop */
+  }
+  html, body { height:100%; background:var(--bg); color:var(--text); margin:0;
+    font-family: ui-monospace, Menlo, Monaco, "Cascadia Mono", monospace;
+    -webkit-text-size-adjust: 100%; }
+  body, button { touch-action: manipulation; }
+  * { -webkit-tap-highlight-color: transparent; }
+
+  /* ===== Desktop-first: fixed 3 columns ===== */
+  .wrap {
+    display:grid;
+    grid-template-columns: var(--hud-w) auto var(--log-w);
+    grid-template-areas: "hud map log";
+    gap:12px; padding:12px;
+    overflow-x: hidden; /* prevent horizontal scroll leaks */
+  }
+  .title { grid-column:1 / -1; font-weight:700; letter-spacing:.5px; color:var(--muted); font-size: 16px; margin-bottom: 6px; }
+
+  .map { grid-area: map; place-self:start center; background:#0a0a0e; padding:8px; border:2px solid #2a2a33; border-radius:12px; image-rendering:pixelated; position:relative;
+    max-width: 100%; min-width: 0; overflow: hidden; }
+  .grid { display:grid; grid-template-columns:repeat(var(--grid-w), var(--cell)); grid-template-rows:repeat(var(--grid-h), var(--cell)); gap:var(--gap); user-select:none; -webkit-user-select:none; }
+  .cell { width:var(--cell); height:var(--cell); background:#11131a; box-shadow: inset 0 0 0 calc(1px * var(--scale)) #06070a; border-radius:calc(2px * var(--scale)); position:relative; }
+  .wall { background:#2b2f3a; } .floor { background:#171923; } .door { background:#3b2b1a; }
+
+  /* HP BAR */
+  .hpbar {
+    width: calc(var(--cell)*var(--grid-w) + (var(--grid-w) - 1)*var(--gap));
+    height: calc(6px * var(--scale));
+    background:#171a24; border:1px solid #2b2f3a; border-radius:999px; position:relative; margin: 0 0 8px 0; overflow:hidden;
+  }
+  .hpbar-fill { position:absolute; left:0; top:0; bottom:0; width:50%; background: linear-gradient(90deg, #28c76f, #25a36f); transition: width .2s ease, background .2s ease; }
+  .hpbar-text { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; user-select:none; font-size: 12px; font-weight:700; color:#ffffff; text-shadow: 0 1px 0 rgba(0,0,0,.6); }
+
+  .player::after, .ally::after, .npc::after, .item::after, .monster::after, .chest::after, .altar::after, .trap-sprung::after {
+    content:""; position:absolute; inset:20%; border-radius:calc(2px * var(--scale));
+  }
+  .player::after { background:#ffd166; box-shadow:0 0 0 calc(2px * var(--scale)) rgba(0,0,0,.25); }
+  .ally::after   { background:#ff9bf3; }
+  .npc::after    { background:#7fb7ff; }
+  .item::after   { background:#7fd962; }
+  .monster::after{ background:#ff6b6b; }
+  .chest::after  { background:#c68d3d; }
+  .altar::after  { background:#9b6dff; }
+  .trap-sprung::after { background:#aa3333; }
+
+  @keyframes pulse { 0%{outline-color:#d9ff76;} 50%{outline-color:transparent;} 100%{outline-color:#d9ff76;} }
+  .cursor { outline:calc(2px * var(--scale)) solid #d9ff76; outline-offset:calc(-3px * var(--scale)); animation:pulse 1s ease-in-out infinite; }
+  .door-near { outline:calc(2px * var(--scale)) dashed #d9ff76; outline-offset:calc(-3px * var(--scale)); animation:pulse 1s ease-in-out infinite; }
+
+  .panel { background:var(--panel); border:1px solid #2a2a33; border-radius:12px; padding:10px; }
+  .hud { grid-area: hud; background:var(--hud); width: var(--hud-w); }
+  #logPanel { grid-area: log; width: var(--log-w); }
+  .section-title { color:var(--muted); font-size:12px; margin:0 0 6px; text-transform:uppercase; letter-spacing:.1em; }
+  .stat { display:flex; justify-content:space-between; font-size:14px; margin:2px 0; }
+
+  /* Inventory pills (contrast + auto width) */
+  .inv { display:flex; flex-wrap:wrap; gap:6px; align-items:flex-start; }
+  .tag {
+    display:inline-flex; align-items:center; padding:6px 12px; border-radius:999px;
+    background:#1a1d27; border:1px solid #3a3f52; font-size:13px; line-height:1.2; color:#f4f6ff;
+    width:auto; max-width:100%; white-space:normal;
+  }
+  .tag.inv-item { cursor:pointer; }
+  .tag.inv-item:hover { background:#22283a; border-color:#4a5472; }
+  .tag.inv-item:focus-visible { outline:2px solid #7fb7ff; outline-offset:2px; }
+  .tag.inv-item[disabled] { cursor:default; background:#181a22; border-color:#2e3342; color:#cfd6e6; opacity:1; }
+
+  .keys { display:flex; gap:8px; flex-wrap:wrap; font-size:12px; color:var(--muted); }
+
+  .log { max-height: calc(var(--cell)*var(--grid-h) + 16px); overflow:auto; font-size:13px; line-height:1.25; padding-bottom:6px; }
+  .entry { display:flex; gap:8px; align-items:flex-start; margin:8px 0; }
+  .portrait { width:18px; height:18px; border-radius:4px; image-rendering:pixelated; background:#2b2f3a; box-shadow: inset 0 0 0 2px #0a0b10; }
+  .bubble { padding:6px 8px; border-radius:8px; background:#131620; border:1px solid #2a2a33; }
+  .entry.dialog .bubble { background:#151a26; border-color:#2f3b52; }
+  .entry.combat .bubble { background:#25171a; border-color:#4a2a31; }
+  .entry.loot   .bubble { background:#162116; border-color:#2f3a2f; }
+  .entry.system .bubble { background:#141414; border-color:#2a2a2a; }
+
+  .choices { margin-top:6px; display:flex; gap:6px; flex-wrap:wrap; }
+  .choice-btn { position:relative; font:inherit; font-size:12px; padding:8px 10px; background:#0f1117; border:1px solid #2f3b52; border-radius:8px; color:var(--text); cursor:pointer; }
+  .choice-btn:hover { background:#182030; }
+  .choice-btn[disabled] { opacity:.5; cursor:default; }
+  .choice-btn[data-hint]::after {
+    content:attr(data-hint); position:absolute; left:0; top:100%; transform:translateY(6px);
+    white-space:nowrap; background:#0a0f18; border:1px solid #2f3b52; border-radius:6px;
+    padding:6px 8px; font-size:12px; color:#e6f0ff; opacity:0; pointer-events:none; transition:opacity .12s, transform .12s; z-index:5;
+  }
+  .choice-btn[data-hint]:hover::after, .choice-btn[data-hint]:focus-visible::after { opacity:1; transform:translateY(2px); }
+
+  .fog-seen { filter:brightness(0.55) saturate(0.7); }
+  .fog-unseen { background:#06070a !important; box-shadow: inset 0 0 0 calc(1px * var(--scale)) #030308 !important; }
+  .fog-unseen::after { content:none !important; }
+
+  .quest-list { display:grid; gap:6px; }
+  .quest { display:flex; align-items:center; gap:8px; font-size:12px; }
+  .qdot { width:8px; height:8px; border-radius:50%; background:#666; }
+  .quest.active .qdot { background:var(--info); } .quest.completed .qdot { background:var(--accent); }
+  .quest .qtitle { font-weight:600; } .quest .qstatus { margin-left:auto; opacity:.7; }
+
+  .sound-row { display:flex; align-items:center; gap:8px; margin:8px 0 4px; flex-wrap:wrap; }
+  .btn { font:inherit; color:var(--text); background:#0f1117; border:1px solid #2b2f3a; border-radius:10px; padding:8px 10px; cursor:pointer; }
+  .btn:hover { background:#171d2a; }
+
+  .tools-row { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+
+  /* Overlay modals (centered, scroll-safe on mobile) */
+  .overlay {
+    position: fixed; inset: 0; display: none; place-items: center; background: rgba(0,0,0,.65); z-index: 1000;
+    padding: max(12px, env(safe-area-inset-top)) 12px max(12px, env(safe-area-inset-bottom));
+  }
+  .overlay.show { display: grid; }
+  .overlay .card {
+    width: min(520px, 92vw);
+    max-height: min(90svh, 90vh);
+    background:#0d0f16; border:1px solid #2b2f3a; border-radius:14px; padding:16px; box-shadow: 0 10px 24px rgba(0,0,0,.4);
+    display:flex; flex-direction:column; overflow:auto;
+  }
+  .overlay h2 { margin: 0 0 8px; font-size: clamp(16px, 4vw, 20px); position: sticky; top: 0; background:#0d0f16; z-index:1; padding-top:2px; }
+  .overlay p  { margin: 6px 0; color:#c7c7d2; font-size: clamp(13px, 3.6vw, 15px); }
+  .overlay .actions { margin-top: 12px; display:flex; justify-content:flex-end; gap:8px; position: sticky; bottom: 0;
+    background: linear-gradient(to top, rgba(13,15,22,1), rgba(13,15,22,.92) 60%, rgba(13,15,22,0)); padding-top: 8px; }
+
+  #yt-player { position:absolute; width:1px; height:1px; left:-9999px; top:-9999px; overflow:hidden; }
+
+  /* Cosmetics */
+  .player.cos-aura-bone   { box-shadow: 0 0 0 3px rgba(160,210,255,.28) inset, 0 0 8px rgba(160,210,255,.35); }
+  .player.cos-aura-shadow { box-shadow: 0 0 0 3px rgba(0,0,0,.4) inset, 0 0 10px rgba(0,0,0,.6); }
+  .player.cos-aura-spark  { box-shadow: 0 0 0 3px rgba(255,255,160,.28) inset, 0 0 8px rgba(255,255,160,.35); }
+  .player[class*="cos-hat-"]::before { content:""; position:absolute; left:35%; top:6%; width:30%; height:12%; border-radius: 2px; background:#222; box-shadow: 0 1px 0 #000, 0 -1px 0 #000; }
+  .player.cos-hat-laurel::before { background: linear-gradient(#7fd962,#b9f27e); }
+  .player.cos-hat-crown::before  { background: linear-gradient(#f7d84a,#ffef9a); }
+  .player.cos-hat-shadowcap::before { background:#444; }
+  .cell.trail::after { content:""; position:absolute; inset:42% 42% auto auto; width:16%; height:16%; border-radius: 2px; opacity:.85; }
+  .cell.trail.trail-blood::after  { background:#ff6b6b; }
+  .cell.trail.trail-sparkle::after{ background:#ffd166; }
+  .cell.trail.trail-shadow::after { background:#555; }
+
+  /* Mobile tabs (Bag / Script) — hidden on desktop */
+  .mobile-tabs { display:none; grid-column: 1 / -1; gap:8px; }
+  .mobile-tabs .tab { flex:1; text-align:center; padding:10px 12px; border-radius:10px; border:1px solid #2b2f3a; background:#0f1117; color:#f4f6ff; font:inherit; }
+  .mobile-tabs .tab.active { background:#182030; border-color:#3b4b6b; }
+
+  /* Touch controls */
+  .touchpad {
+    position: fixed; left: 50%; transform: translateX(-50%);
+    bottom: clamp(8px, 3vh, 24px);
+    display: none; gap: 6px; z-index: 1100;
+    background: rgba(10,12,20,.6); border: 1px solid #2b2f3a; border-radius: 14px;
+    padding: 8px 10px; backdrop-filter: blur(4px);
+  }
+  .touchpad .row { display:flex; justify-content:center; gap:8px; margin: 4px 0; }
+  .touchpad .row.small .tp { font-size: 14px; padding: 10px 12px; }
+  .tp { font: inherit; color: var(--text); background:#0f1117; border:1px solid #2b2f3a; border-radius: 12px; padding: 12px 14px; min-width: 48px; min-height: 48px; }
+  .tp-big { min-width: 68px; }
+
+  /* ====== BREAKPOINTS ====== */
+
+  /* Medium screens: allow columns to shrink & keep map clamped */
+  @media (max-width: 1200px) {
+    .wrap {
+      grid-template-columns: minmax(0,1fr) minmax(0, calc(var(--cell)*var(--grid-w) + 16px));
+      grid-template-areas:
+        "map  map"
+        "hud  map"
+        "log  map";
+    }
+    .map {
+      justify-self: center;
+      width: 100%;
+      max-width: calc(100vw - 24px);
+    }
+  }
+
+  /* Phones: single column; map always within viewport; full-width modal choices; tooltips off */
+  @media (max-width: 900px) {
+    .wrap {
+      grid-template-columns: minmax(0,1fr);
+      grid-template-areas:
+        "map"
+        "tabs"
+        "hud"
+        "log";
+    }
+    .mobile-tabs { display:flex; grid-area: tabs; }
+    .map { width: 100%; max-width: calc(100vw - 24px); padding: 8px; }
+    .log { max-height: 40vh; }
+    .choices { gap:8px; }
+    .choice-btn, .overlay .actions .btn { width:100%; min-height: 44px; font-size: 14px; }
+    .btn { min-height: 44px; }
+    .choice-btn[data-hint]::after { display:none; }
+  }
+
+  @media (pointer: coarse), (max-width: 900px) { .touchpad { display: inline-block; } }
+
+  @supports (padding: max(0px)) {
+    body { padding-top: max(0px, env(safe-area-inset-top)); padding-bottom: max(0px, env(safe-area-inset-bottom)); }
+  }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="title">Mini D&D Pixel Crawler</div>
+
+    <!-- Mobile Tabs (hidden on desktop) -->
+    <div id="mobileTabs" class="mobile-tabs" aria-label="Mobile Panels Tabs" role="tablist">
+      <button class="tab active" data-tab="bag" role="tab" aria-selected="true" aria-controls="hudPanel">Bag</button>
+      <button class="tab" data-tab="log" role="tab" aria-selected="false" aria-controls="logPanel">Script</button>
+    </div>
+
+    <div class="panel hud" id="hudPanel">
+      <h3 class="section-title">Hero</h3>
+      <div id="stats"></div>
+
+      <h3 class="section-title" style="margin-top:10px;">Inventory</h3>
+      <div id="inventory" class="inv"></div>
+
+      <h3 class="section-title" style="margin-top:10px;">Quests</h3>
+      <div id="quests" class="quest-list"></div>
+
+      <div class="sound-row">
+        <button id="soundBtn" class="btn">🔈 Sound: On</button>
+        <button id="musicBtn" class="btn">🎵 Music: On</button>
+        <button id="cosBtn" class="btn">✨ Cosmetics</button>
+        <button id="codexBtn" class="btn">📖 Codex</button>
+      </div>
+
+      <div class="sound-row" style="font-size:12px;color:#9aa0a6">
+        Music via <a href="https://www.youtube.com/watch?v=wScEFaoqwPM" target="_blank" rel="noopener">YouTube</a>
+      </div>
+
+      <h3 class="section-title" style="margin-top:10px;">Controls</h3>
+      <div class="keys">
+        <span class="kbd">Arrow Keys / WASD</span> move
+        <span class="kbd">E</span> talk / use
+        <span class="kbd">Space</span> pick up
+        <span class="kbd">F</span> fight
+        <span class="kbd">H</span> heal
+        <span class="kbd">Enter</span> continue
+        <span class="kbd">1–9</span> choose
+        <span class="kbd">M</span> music
+        <span class="kbd">C</span> codex
+      </div>
+    </div>
+
+    <div class="map" aria-label="Map">
+      <!-- HP bar -->
+      <div class="hpbar" aria-hidden="false">
+        <div id="hpfill" class="hpbar-fill"></div>
+        <div id="hptext" class="hpbar-text">HP 10/10</div>
+      </div>
+      <div id="grid" class="grid"></div>
+    </div>
+
+    <div class="panel" id="logPanel">
+      <h3 class="section-title">Script</h3>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+  <!-- Level Up overlay -->
+  <div id="lvlup" class="overlay" role="dialog" aria-modal="true" aria-labelledby="lvlup-title">
+    <div class="card">
+      <h2 id="lvlup-title">Level Up!</h2>
+      <p id="lvlup-details">You feel stronger.</p>
+      <div class="actions">
+        <button id="lvlup-continue" class="btn">Continue to Level 2 →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Conversation / Choice Modal -->
+  <div id="dialog" class="overlay" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
+    <div class="card">
+      <h2 id="dialog-title">Conversation</h2>
+      <div id="dialog-text" class="bubble" style="margin:8px 0;"></div>
+      <div id="dialog-choices" class="choices"></div>
+      <div class="actions">
+        <button id="dialog-leave" class="btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Touch controls (shown on mobile/tablet) -->
+  <div id="touchpad" class="touchpad" aria-hidden="true">
+    <div class="row">
+      <button data-a="up"    class="tp tp-up" aria-label="Move Up">▲</button>
+    </div>
+    <div class="row">
+      <button data-a="left"  class="tp" aria-label="Move Left">◀</button>
+      <button data-a="use"   class="tp tp-big" title="Talk/Use (E)" aria-label="Use">E</button>
+      <button data-a="right" class="tp" aria-label="Move Right">▶</button>
+    </div>
+    <div class="row">
+      <button data-a="down"  class="tp tp-down" aria-label="Move Down">▼</button>
+    </div>
+    <div class="row small">
+      <button data-a="fight" class="tp" aria-label="Fight">F</button>
+      <button data-a="pick"  class="tp" aria-label="Pick up">␣</button>
+      <button data-a="heal"  class="tp" aria-label="Heal">H</button>
+    </div>
+  </div>
+
+  <!-- Hidden YouTube player target -->
+  <div id="yt-player" aria-hidden="true"></div>
+  <script src="https://www.youtube.com/iframe_api"></script>
+
+<script>
+/* ======= Helpers ======= */
+const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
+const escapeHTML = (s)=>String(s).replace(/[&<>"']/g, m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
+const withSign = (n)=> (n>=0?"+":"")+n;
+
+/* Haptics */
+function vib(ms=40){ if (navigator.vibrate) try{ navigator.vibrate(ms); }catch(e){} }
+
+/* ======= Game constants ======= */
+const W=16,H=12, TILES={FLOOR:0,WALL:1,DOOR:2}, VISION=6;
+
+const player = { level: 1, x:2,y:2, hp:10,maxHp:10, ac:12, str:2,dex:1,prof:2, inventory:[], buff:{ac:0,attack:0}, gold:0 };
+const ally   = { active:false, name:"Nyx", x:null, y:null, tint:"#ff9bf3" };
+
+/* ======= Meta / Daily / Codex ======= */
+function loadMeta(){ try { return JSON.parse(localStorage.getItem('mini_meta') || '{}'); } catch(e){ return {}; } }
+function saveMeta(){ localStorage.setItem('mini_meta', JSON.stringify(META)); }
+const META = Object.assign(loadMeta(), { favor:0, hpBonus:0, acBonus:0, startPotion:0, ach:{}, cosm:{ unlocks:{}, active:{ aura:null, hat:null, trail:null } }, codex:{ monsters:{}, npcs:{}, items:{}, locations:{} } });
+saveMeta();
+const PROG = { kills:0, chests:0, altars:0, potions:0, flawless:0 };
+const DAILY = (function genDaily(){
+  const dateKey = new Date().toISOString().slice(0,10);
+  try{ const saved = JSON.parse(localStorage.getItem('mini_daily')||'{}'); if(saved.date===dateKey) return saved; }catch(e){}
+  const all = [
+    {id:'kill3', title:'Cull the pests', desc:'Defeat 3 monsters', key:'kills', need:3, reward:{gold:20, favor:1}},
+    {id:'open2', title:'Crack two chests', desc:'Open 2 chests', key:'chests', need:2, reward:{gold:15, favor:1}},
+    {id:'bless1',title:'Seek a blessing', desc:'Use 1 altar', key:'altars', need:1, reward:{gold:10, favor:1}},
+  ];
+  const picks = all.slice(0,2).map(t=>({...t, done:0, claimed:false}));
+  const obj={dateKey, date:dateKey, tasks:picks}; localStorage.setItem('mini_daily', JSON.stringify(obj)); return obj;
+})();
+function saveDaily(){ localStorage.setItem('mini_daily', JSON.stringify(DAILY)); }
+function addProgress(key, inc=1){ PROG[key]=(PROG[key]||0)+inc; DAILY.tasks.forEach(t=>{ if(t.key===key && t.done < t.need) t.done = Math.min(t.need, t.done+inc); }); saveDaily(); }
+
+/* ====== Simple codex helpers ====== */
+const LORE = {
+  monsters:{ goblin:"A red menace.", rat:"Gym rat.", skeleton:"Held by spite.", "skeleton-captain":"Clacks orders." },
+  npcs:{ "old-sage":"Unsolicited wisdom.", nyx:"Roguish charm.", peddler:"Suspiciously stocked.", board:"Jobs you didn’t want." },
+  items:{ "rusty-dagger":"Rust adds flavor.", "leather-cap":"+1 AC hat.", "small-potion":"Red, bubbly.", herb:"Smells optimistic." },
+  locations:{ start:"Where it starts.", hall:"Shady hall.", crypt:"Bone storage." }
+};
+function codexDiscover(cat, id, name){ const C = META.codex[cat]||(META.codex[cat]={}); if(!C[id]){ C[id]={ name:name||id, seen:true, count:0 }; saveMeta(); lootMsg(`Codex updated: ${name||id}`); } }
+
+/* ====== Maps / Worlds ====== */
+function makeSeen(){ return Array.from({length:H},()=>Array(W).fill(false)); }
+const L1_room0=[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,2,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1],[1,0,0,0,0,0,0,1,0,1,0,0,0,0,0,1],[1,0,0,0,0,0,0,1,0,1,0,0,0,0,0,1],[1,0,0,0,0,0,0,1,0,1,0,0,0,0,0,1],[1,0,0,0,0,0,0,1,1,1,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]];
+const L1_room1=[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[2,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,2],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]];
+const L1_room2=[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,1],[2,0,1,1,0,1,0,1,0,1,0,1,0,1,0,2],[1,0,0,0,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,1,1,0,1,0,0,0,1,0,0,0,1,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]];
+const WORLD1 = [
+  {
+    id:"start", name:"the starting chamber", map:L1_room0,
+    npcs:[{ id:"old-sage", x:5,y:3, tint:"#7fb7ff", idx:0, dialog:[
+      { speaker:"Sage", text:"Welcome, traveler. I can aid you—or test you." },
+      { type:"choice", speaker:"Sage", text:"How may I help?", options:[
+        { label:"Aid me", hint:"+4 HP (once)", stay:true, run(){ say("Sage","Be restored."); heal(4); } },
+        { label:"Arm me", hint:"+1 attack charm", stay:true, run(){ say("Sage","Aim true."); giveItem({id:"sage-charm",name:"Sage Charm (+1 attack)",mod:{attack:+1}}); } },
+        { label:"Give me a quest", hint:"Hunt the red fiend", stay:true, run(){ say("Sage","A red fiend lurks east. End it."); addQuest("defeat-goblin","Defeat the Goblin","Slay the red fiend to the east."); } },
+        { label:"I'm fine", hint:"No effect", stay:true, run(){ say("Sage","Very well."); } }
+      ]},
+      { speaker:"Sage", text:"Beware the red fiend in the east." },
+    ]}],
+    items:[ {id:"rusty-dagger",name:"Rusty Dagger (+1 attack)",x:4,y:6,mod:{attack:+1}}, {id:"leather-cap",name:"Leather Cap (+1 AC)",x:10,y:8,mod:{ac:+1}} ],
+    chests:[], altars:[], traps:[],
+    monsters:[ {id:"goblin",name:"Goblin",x:13,y:4,hp:6,ac:11,attackBonus:+3,dmg:[1,6]} ],
+    exits:[ {x:14,y:1,to:1,tx:1,ty:1} ],
+    seen:makeSeen(),
+  },
+  {
+    id:"hall", name:"a shadowed hall", map:L1_room1,
+    npcs:[
+      { id:"nyx", x:3,y:5, tint:"#ff9bf3", idx:0, dialog:[
+        { speaker:"Stranger", text:"Psst. You look like someone who likes gold." },
+        { type:"choice", speaker:"Stranger", text:"Call me Nyx. What's it gonna be?",
+          options:[
+            { label:"Who are you really?", hint:"Learn background", stay:true, run(){ say("Nyx","Freelance problem-solver. Flexible morals. Excellent hat."); } },
+            { label:"What do you bring?", hint:"Flanking advantage", stay:true, run(){ say("Nyx","I help you flank. Advantage if we box 'em in."); } },
+            { label:"What's the catch?", hint:"Split the 50g bounty", stay:true, run(){ say("Nyx","We split any crypt bounty. Fifty-fifty."); } },
+            { label:"Join me", hint:"Gain advantage, split gold", run(){ recruitNyx(); } },
+            { label:"No thanks", hint:"Go solo", stay:true, run(){ say("Nyx","Suit yourself. I’ll be around."); } },
+          ]
+        },
+      ]},
+    ],
+    items:[ {id:"small-potion",name:"Small Potion (+4 HP)",x:8,y:8,use:()=>heal(4)} ],
+    chests:[ {x:6,y:8,opened:false,loot:[ {id:"bronze-key",name:"Bronze Key",key:true} ]} ],
+    altars:[], traps:[],
+    monsters:[ {id:"rat",name:"Giant Rat",x:12,y:1,hp:4,ac:12,attackBonus:+2,dmg:[1,4]} ],
+    exits:[ {x:0,y:1,to:0,tx:13,ty:1}, {x:15,y:5,to:2,tx:1,ty:5,requires:"bronze-key",lockedText:"A bronze keyhole glares at you."} ],
+    seen:makeSeen(),
+  },
+  {
+    id:"crypt", name:"the crypt", map:L1_room2,
+    npcs:[], items:[],
+    chests:[ {x:3,y:4,opened:false,loot:[ {id:"potion-strong",name:"Strong Potion (+6 HP)",use:()=>heal(6)} ]} ],
+    altars:[ {x:8,y:4,used:false,effect(){ player.buff.ac += 1; narrate("You feel protected (+1 AC until you leave)."); sfx('bless'); } } ],
+    traps:[ {x:4,y:6,dmg:2,sprung:false} ],
+    monsters:[
+      {id:"skeleton",name:"Skeleton",x:6,y:6,hp:5,ac:12,attackBonus:+3,dmg:[1,6]},
+      {id:"skeleton-captain",name:"Skeleton Captain",x:14,y:5,hp:10,ac:13,attackBonus:+4,dmg:[1,8]}
+    ],
+    exits:[ {x:0,y:5,to:1,tx:14,ty:5} ],
+    seen:makeSeen(),
+  }
+];
+
+const L2_room0=[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,0,0,0,0,0,0,0,0,1,0,0,0,0,2,1],[1,0,0,1,0,0,0,1,0,1,0,1,0,0,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,1],[1,0,1,1,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,1,1,0,1,0,0,0,1,0,0,0,1,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]];
+const L2_room1=[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[2,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,2],[1,0,0,0,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,0,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,1,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]];
+const L2_room2=[[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],[1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,0,0,0,1,0,0,0,1,0,0,0,1,0,1],[2,0,1,1,0,1,0,1,0,1,0,1,0,1,0,2],[1,0,0,0,0,1,0,1,0,1,0,1,0,1,0,1],[1,0,1,1,0,1,0,0,0,1,0,0,0,1,0,1],[1,0,0,1,0,1,0,1,0,1,0,1,0,0,0,1],[1,0,0,1,0,0,0,1,0,0,0,1,0,0,0,1],[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],[1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]];
+const WORLD2 = [
+  { id:"meadow-gate", name:"the meadow gate", map:L2_room0, npcs:[], items:[{id:"herb",name:"Healing Herb (+2 HP)",x:2,y:9,use:()=>heal(2)}], chests:[], altars:[], traps:[], monsters:[{id:"slime",name:"Green Slime",x:4,y:6,hp:5,ac:10,attackBonus:+2,dmg:[1,4]}], exits:[{x:14,y:1,to:1,tx:1,ty:1}], seen:makeSeen() },
+  { id:"old-road", name:"the old bandit road", map:L2_room1, npcs:[], items:[{id:"small-potion",name:"Small Potion (+4 HP)",x:8,y:8,use:()=>heal(4)}], chests:[{x:6,y:8,opened:false,loot:[{id:"silver-key",name:"Silver Key",key:true}]}], altars:[], traps:[], monsters:[{id:"bandit",name:"Bandit",x:12,y:1,hp:6,ac:12,attackBonus:+3,dmg:[1,6]}], exits:[{x:0,y:1,to:0,tx:13,ty:1},{x:15,y:5,to:2,tx:1,ty:5,requires:"silver-key",lockedText:"A silver lock shines mockingly."}], seen:makeSeen() },
+  { id:"ruined-keep", name:"the ruined keep", map:L2_room2, npcs:[], items:[], chests:[{x:3,y:4,opened:false,loot:[{id:"potion-strong",name:"Strong Potion (+6 HP)",use:()=>heal(6)}]}], altars:[{x:8,y:4,used:false,effect(){ player.buff.ac += 1; narrate("Stone spirits shield you (+1 AC until you leave)."); sfx('bless'); }}], traps:[{x:4,y:6,dmg:2,sprung:false}], monsters:[{id:"bandit-brute",name:"Bandit Brute",x:6,y:6,hp:7,ac:12,attackBonus:+3,dmg:[1,6]},{id:"bandit-chief",name:"Bandit Chief",x:14,y:5,hp:12,ac:14,attackBonus:+4,dmg:[1,8]}], exits:[{x:0,y:5,to:1,tx:14,ty:5}], seen:makeSeen() }
+];
+
+/* ===== World switching ===== */
+let levelIndex=0, rooms=WORLD1, roomIndex=0;
+let map=rooms[roomIndex].map, npcs=rooms[roomIndex].npcs, items=rooms[roomIndex].items, monsters=rooms[roomIndex].monsters, chests=rooms[roomIndex].chests||[], altars=rooms[roomIndex].altars||[], traps=rooms[roomIndex].traps||[], seen=rooms[roomIndex].seen;
+let visible = Array.from({length:H},()=>Array(W).fill(false));
+const quests = {};
+function addQuest(id,title,details=""){ if(!quests[id]){ quests[id]={title,status:"active",details}; narrate(`Quest started: ${title}`); renderQuests(); } }
+function completeQuest(id){ if(quests[id] && quests[id].status!=="completed"){ quests[id].status="completed"; narrate(`Quest completed: ${quests[id].title}`); renderQuests(); } }
+function clearQuests(){ for(const k in quests) delete quests[k]; renderQuests(); }
+function addGold(n){ player.gold += n; lootMsg(`+${n} gold`); renderHUD(); }
+
+/* ===== UI refs ===== */
+const gridEl=document.getElementById('grid'), logEl=document.getElementById('log'), invEl=document.getElementById('inventory'), statsEl=document.getElementById('stats'), questsEl=document.getElementById('quests');
+const soundBtn=document.getElementById('soundBtn'), musicBtn=document.getElementById('musicBtn');
+const lvlupEl=document.getElementById('lvlup'), lvlupDetails=document.getElementById('lvlup-details');
+const hpFill = document.getElementById('hpfill'); const hpText = document.getElementById('hptext');
+const dlgEl = document.getElementById('dialog'); const dlgTitle = document.getElementById('dialog-title'); const dlgText = document.getElementById('dialog-text'); const dlgChoices = document.getElementById('dialog-choices');
+
+/* ===== Rendering ===== */
+const stepTrail=[];
+function draw(){
+  gridEl.style.setProperty('--grid-w', W); gridEl.style.setProperty('--grid-h', H);
+  computeFOV(); gridEl.innerHTML="";
+  const nearDoorSet=new Set(); rooms[roomIndex].exits.forEach(e=>{ if(Math.abs(e.x-player.x)+Math.abs(e.y-player.y)===1) nearDoorSet.add(e.x+","+e.y); });
+  for(let y=0;y<H;y++){
+    for(let x=0;x<W;x++){
+      const cell=document.createElement('div'); const t=tileAt(x,y);
+      cell.className='cell '+(t===1?'wall':t===2?'door':'floor');
+      if(t===TILES.DOOR && nearDoorSet.has(x+","+y)) cell.classList.add('door-near');
+      if(!seen[y][x]) cell.classList.add('fog-unseen'); else if(!visible[y][x]) cell.classList.add('fog-seen');
+
+      if(visible[y][x]){
+        if(player.x===x && player.y===y) cell.classList.add('player','cursor');
+        if(ally.active && ally.x===x && ally.y===y) cell.classList.add('ally');
+        npcs.forEach(n=>{ if(n.x===x && n.y===y) cell.classList.add('npc'); });
+        items.forEach(it=>{ if(it.x===x && it.y===y) cell.classList.add('item'); });
+        chests.forEach(c=>{ if(!c.opened && c.x===x && c.y===y) cell.classList.add('chest'); });
+        altars.forEach(a=>{ if(!a.used && a.x===x && a.y===y) cell.classList.add('altar'); });
+        monsters.forEach(m=>{ if(m.x===x && m.y===y) cell.classList.add('monster'); });
+        traps.forEach(tr=>{ if(tr.sprung && tr.x===x && tr.y===y) cell.classList.add('trap-sprung'); });
+      } else {
+        if(player.x===x && player.y===y) cell.classList.add('player','cursor');
+      }
+      const crumb = stepTrail.find(t => t.x===x && t.y===y); if (crumb && visible[y][x]) cell.classList.add('trail', 'trail-'+crumb.type);
+      gridEl.appendChild(cell);
+    }
+  }
+  renderHUD();
+}
+function updateHPBar(){
+  const hp = Math.max(0, player.hp|0), max = Math.max(1, player.maxHp|0);
+  const pct = Math.max(0, Math.min(1, hp / max));
+  if (hpFill){ hpFill.style.width = Math.round(pct*100) + '%'; const hue = Math.round(120 * pct); const hue2 = Math.max(0, hue-10); hpFill.style.background = `linear-gradient(90deg, hsl(${hue},70%,45%), hsl(${hue2},70%,38%))`; }
+  if (hpText){ hpText.textContent = `HP ${hp}/${max}`; }
+}
+function renderHUD(){
+  statsEl.innerHTML=[ row("LV",player.level), row("HP",`${player.hp}/${player.maxHp}`), row("AC",getAC()), row("Gold",`${player.gold}g`), row("STR",withSign(player.str)), row("DEX",withSign(player.dex)), row("ATK",withSign(playerAttackBonus())) ].join("");
+  invEl.innerHTML = player.inventory.length ? player.inventory.map(it=>{
+    const usable = typeof it.use === "function";
+    return `<button class="tag inv-item" ${usable ? "" : "disabled"} data-id="${it.id}" title="${usable ? "Use" : ""}">${escapeHTML(it.name)}${usable ? " • Use" : ""}</button>`;
+  }).join("") : `<span class="tag" style="opacity:.9">empty</span>`;
+  renderQuests(); updateHPBar();
+}
+function renderQuests(){
+  const entries=Object.entries(quests);
+  if(!entries.length){ questsEl.innerHTML=`<div class="quest" style="opacity:.6"><div class="qdot"></div><div class="qtitle">No quests</div></div>`; return; }
+  questsEl.innerHTML = entries.map(([id,q])=>`<div class="quest ${q.status}"><div class="qdot"></div><div class="qtitle">${escapeHTML(q.title)}</div><div class="qstatus">${q.status}</div></div>`).join("");
+}
+function row(label,value){ return `<div class="stat"><span>${label}</span><strong>${value}</strong></div>`; }
+
+/* ===== Map helpers & FOV ===== */
+function tileAt(x,y){ return map[y]?.[x] ?? 1; }
+function passable(x,y){ return tileAt(x,y) !== TILES.WALL; }
+function computeFOV(){
+  visible = Array.from({length:H},()=>Array(W).fill(false));
+  for(let y=Math.max(0,player.y-VISION); y<=Math.min(H-1,player.y+VISION); y++){
+    for(let x=Math.max(0,player.x-VISION); x<=Math.min(W-1,player.x+VISION); x++){
+      const dx=x-player.x, dy=y-player.y;
+      if(dx*dx+dy*dy<=VISION*VISION && hasLOS(player.x,player.y,x,y)){ visible[y][x]=true; seen[y][x]=true; }
+    }
+  }
+}
+function hasLOS(x0,y0,x1,y1){
+  let x=x0,y=y0; const dx=Math.abs(x1-x0), dy=Math.abs(y1-y0); const sx=x0<x1?1:-1, sy=y0<y1?1:-1; let err=dx-dy;
+  while(!(x===x1 && y===y1)){ if(!(x===x0&&y===y0)&&!(x===x1&&y===y1)&&tileAt(x,y)===TILES.WALL) return false;
+    const e2=2*err; if(e2>-dy){ err-=dy; x+=sx; } if(e2<dx){ err+=dx; y+=sy; } }
+  return true;
+}
+
+/* ===== Log & Dialog ===== */
+function logScript({mode="system",speaker="",text="",tint=""}){
+  const entry=document.createElement('div'); entry.className=`entry ${mode}`;
+  const face=document.createElement('div'); face.className='portrait'; face.style.background=tint||({dialog:'#7fb7ff',combat:'#ff6b6b',loot:'#7fd962',system:'#2b2b2b'}[mode]||'#2b2b2b');
+  const bubble=document.createElement('div'); bubble.className='bubble'; bubble.innerHTML = speaker ? `<span class="speaker">${escapeHTML(speaker)}:</span> ${escapeHTML(text)}` : `${escapeHTML(text)}`;
+  entry.appendChild(face); entry.appendChild(bubble); logEl.appendChild(entry); logEl.scrollTop=logEl.scrollHeight; return {entry,bubble};
+}
+const narrate = (t)=>logScript({mode:"system",text:t});
+const say     = (who,t,tint)=>{ sfx('talk'); lastModalLine = { who, text: t, tint }; return logScript({mode:"dialog",speaker:who,text:t,tint}); };
+const combat  = (t)=>logScript({mode:"combat",text:t});
+const lootMsg = (t)=>logScript({mode:"loot",text:t});
+
+let state="explore", activeDialog=null, activeMonster=null, lastModalLine=null, activeChoice=null, waitingOnChoice=false;
+
+/* Modal helpers */
+function dlgShow({ title="Conversation", text="", options=null }) {
+  dlgTitle.textContent = title; dlgText.textContent = text; dlgChoices.innerHTML = "";
+  if (Array.isArray(options) && options.length) {
+    options.forEach((opt,i)=>{ const b=document.createElement('button'); b.className='choice-btn'; b.textContent=`${i+1}. ${opt.label}`; b.setAttribute('data-idx', i); if(opt.hint) b.setAttribute('data-hint', opt.hint); dlgChoices.appendChild(b); });
+    activeChoice = { options }; waitingOnChoice = true;
+  } else {
+    const cont=document.createElement('button'); cont.className='btn'; cont.textContent='Continue'; cont.addEventListener('click',()=>advanceDialog()); dlgChoices.appendChild(cont);
+    activeChoice=null; waitingOnChoice=false;
+  }
+  document.body.style.overflow = 'hidden';      /* lock background scroll */
+  dlgEl.classList.add('show');
+  const first=dlgChoices.querySelector('button'); if(first) first.focus();
+}
+function dlgHide(){
+  dlgEl.classList.remove('show');
+  document.body.style.overflow = '';            /* unlock scroll */
+}
+dlgChoices.addEventListener('click', (e)=>{ const btn=e.target.closest('button[data-idx]'); if(!btn) return; chooseOption(+btn.getAttribute('data-idx')); });
+document.getElementById('dialog-leave').addEventListener('click', ()=>{ dlgHide(); state="explore"; activeDialog=null; activeChoice=null; waitingOnChoice=false; lastModalLine=null; });
+
+function logChoice({speaker="NPC", text="", options=[], tint=""}){ logScript({mode:"dialog", speaker, text, tint}); state="dialog"; dlgShow({ title:speaker, text, options }); }
+function dialogLine(){
+  const npc=activeDialog; const step=npc?.dialog?.[npc.idx];
+  if(!step){ narrate("They have nothing more to say."); state="explore"; activeDialog=null; dlgHide(); return; }
+  if(step.type==="choice"){ logChoice({speaker:step.speaker||"NPC", text:step.text||"", options:step.options||[], tint:npc.tint||"#7fb7ff"}); return; }
+  say(step.speaker||"NPC", step.text||"", npc.tint||"#7fb7ff");
+  state="dialog"; dlgShow({ title: step.speaker||"NPC", text: step.text||"", options:null });
+}
+function advanceDialog(){
+  if(!activeDialog){ dlgHide(); state="explore"; return; }
+  activeDialog.idx++; if(activeDialog.idx>=activeDialog.dialog.length){ activeDialog.idx=activeDialog.dialog.length-1; state="explore"; activeDialog=null; dlgHide(); } else { dialogLine(); }
+}
+function chooseOption(index){
+  if (!activeChoice) return;
+  const opts = activeChoice.options || []; const opt = opts[index]; if (!opt) return;
+  say("You", opt.label ?? "", "#ffd166");
+  try{ if(typeof opt.run==="function") opt.run(); }catch(e){ console.error(e); }
+  if (opt.stay) {
+    activeChoice=null; waitingOnChoice=false;
+    if (activeDialog) {
+      const step=activeDialog.dialog[activeDialog.idx];
+      if (lastModalLine) { dlgShow({ title:lastModalLine.who || (step.speaker||"NPC"), text:lastModalLine.text || (step.text||""), options: step.options }); lastModalLine=null; }
+      else { dialogLine(); }
+    }
+    return;
+  }
+  activeChoice=null; waitingOnChoice=false; lastModalLine=null; advanceDialog();
+}
+
+/* ===== Input ===== */
+const keys=new Set();
+window.addEventListener('keydown',(e)=>{ if(["ArrowUp","ArrowDown","ArrowLeft","ArrowRight"," "].includes(e.key)) e.preventDefault(); keys.add(e.key); ensureAudio(); if(e.key==='m'||e.key==='M'){ toggleMusic(); return; } handleInput(e.key); });
+window.addEventListener('keyup', (e)=>keys.delete(e.key));
+document.getElementById('cosBtn').addEventListener('click', ()=>openCosmetics());
+document.getElementById('codexBtn').addEventListener('click', ()=>openCodex());
+
+document.getElementById('inventory').addEventListener('click', (e)=>{ const btn=e.target.closest('.inv-item'); if(!btn) return; const id=btn.getAttribute('data-id'); const item=player.inventory.find(i=>i.id===id); if(!item) return; if(state==="combat"){ narrate("Too hectic to rummage your bag mid-swing. (Use potions after the fight.)"); return; } if(typeof item.use==="function"){ useItemById(id); draw(); } });
+
+function handleInput(key){
+  if(state==="levelup"){ return; }
+  if(state==="dialog"){
+    if (key==="Escape"){ dlgHide(); state="explore"; activeDialog=null; activeChoice=null; waitingOnChoice=false; lastModalLine=null; return; }
+    if (waitingOnChoice){ const num=parseInt(key,10); if(!Number.isNaN(num)) chooseOption(num-1); return; }
+    if (key==="Enter"){ advanceDialog(); }
+    return;
+  }
+  if(state==="combat"){ if(key==="Enter"){ playerTurn(); } return; }
+
+  const dirs={ArrowUp:[0,-1],ArrowDown:[0,1],ArrowLeft:[-1,0],ArrowRight:[1,0],w:[0,-1],s:[0,1],a:[-1,0],d:[1,0]};
+  if(dirs[key]){ const [dx,dy]=dirs[key]; tryMove(dx,dy); return; }
+  if(key==="e"||key==="E"){ tryUse(); }
+  if(key===" "){ tryPickup(); }
+  if(key==="f"||key==="F"){ tryFight(); }
+  if(key==="h"||key==="H"){ tryDrinkPotion(); }
+}
+
+/* ===== Movement/Use/Combat ===== */
+let wasNearDoor=false, combatHPStart=null, didLevelGate=false;
+function tryMove(dx,dy){
+  const nx=clamp(player.x+dx,0,W-1), ny=clamp(player.y+dy,0,H-1);
+  if(!passable(nx,ny)){ narrate(randomQuip('wall')); sfx('bump'); vib(30); return; }
+  const m=monsters.find(mm=>mm.x===nx && mm.y===ny); if(m){ narrate(randomQuip('monsterBlock')); sfx('bump'); vib(30); return; }
+  const hasTrail = META.cosm?.active?.trail; if (hasTrail) stepTrail.push({ x:player.x, y:player.y, type:hasTrail.replace('trail-',''), l:6 });
+  const px=player.x, py=player.y; player.x=nx; player.y=ny; sfx('walk'); if(ally.active){ ally.x=px; ally.y=py; }
+  const stepExit=exitAt(player.x,player.y); if(stepExit){ if(stepExit.requires && !hasItem(stepExit.requires)){ narrate(stepExit.lockedText || randomQuip('doorLocked')); sfx('locked'); vib(40); } else { setRoom(stepExit.to, stepExit.tx, stepExit.ty); } return; }
+  const tr=traps.find(t=>!t.sprung && t.x===player.x && t.y===player.y); if(tr){ tr.sprung=true; player.hp=Math.max(0,player.hp-tr.dmg); combat(`A trap springs! You take ${tr.dmg}. HP: ${player.hp}/${player.maxHp}`); sfx('trap'); vib(120); renderHUD(); if(player.hp<=0){ narrate("You fall... Reload to try again."); state="defeated"; draw(); return; } }
+  const near=!!nearbyExit(); if(near && !wasNearDoor) narrate("Door nearby — press E to enter, or step onto it."); wasNearDoor=near;
+  for (let i=stepTrail.length-1;i>=0;i--){ stepTrail[i].l--; if (stepTrail[i].l<=0) stepTrail.splice(i,1); }
+  draw();
+}
+function tryUse(){
+  const ex=onExit()||nearbyExit();
+  if(ex){ if(ex.requires && !hasItem(ex.requires)){ narrate(ex.lockedText || randomQuip('doorLocked')); sfx('locked'); vib(40); return; } setRoom(ex.to,ex.tx,ex.ty); return; }
+  const chest=chests.find(c=>!c.opened && (Math.abs(c.x-player.x)+Math.abs(c.y-player.y)<=1)); if(chest){ chest.opened=true; addProgress('chests',1); (chest.loot||[]).forEach(giveItem); narrate("Chest opened."); sfx('chest'); vib(40); draw(); return; }
+  const npc=npcs.find(n=>Math.abs(n.x-player.x)+Math.abs(n.y-player.y)===1); if(npc){ const niceName=(npc.id==='nyx'?'Nyx': npc.id==='old-sage'?'Sage': npc.id==='peddler'?'Peddler': npc.id==='board'?'Bounty Board': npc.id); codexDiscover('npcs', npc.id, niceName); activeDialog=npc; state="dialog"; dialogLine(); return; }
+  const altar=altars.find(a=>!a.used && (Math.abs(a.x-player.x)+Math.abs(a.y-player.y)===1)); if(altar){ altar.used=true; if(typeof altar.effect==="function") altar.effect(); addProgress('altars',1); renderHUD(); draw(); return; }
+  narrate("Nothing to interact with.");
+}
+function tryPickup(){
+  const it=items.find(i=>i.x===player.x && i.y===player.y); if(!it){ narrate("Nothing here."); return; }
+  giveItem(it); items.splice(items.indexOf(it),1); vib(30); draw();
+}
+function giveItem(item){ player.inventory.push(item); codexDiscover('items', item.id, item.name); lootMsg(`Picked up ${item.name}.`); sfx('pickup'); renderHUD(); }
+function hasItem(id){ return player.inventory.some(i=>i.id===id); }
+function onExit(){ return rooms[roomIndex].exits.find(e=>e.x===player.x && e.y===player.y); }
+function exitAt(x,y){ return rooms[roomIndex].exits.find(e=>e.x===x && e.y===y); }
+function nearbyExit(){ return rooms[roomIndex].exits.find(e=>Math.abs(e.x-player.x)+Math.abs(e.y-player.y)===1); }
+
+function tryFight(){
+  const m=monsters.find(mon=>Math.abs(mon.x-player.x)+Math.abs(mon.y-player.y)===1);
+  if(!m){ narrate(randomQuip('noTarget')); sfx('miss'); return; }
+  activeMonster=m; state="combat"; codexDiscover('monsters', m.id, m.name); if(ally.active) placeAllyForFlank(m);
+  narrate(`Combat begins with ${m.name}! (Press Enter to attack)`); const pInit=d20()+player.dex, mInit=d20()+2; combat(`Your initiative: ${pInit} vs ${m.name}: ${mInit}`); if(mInit>pInit){ narrate(`${m.name} wins initiative!`); monsterTurn(); } else { narrate(`You win initiative!`); }
+}
+function placeAllyForFlank(m){
+  const dx=Math.sign(m.x - player.x), dy=Math.sign(m.y - player.y);
+  const spots=[{x:m.x+dx,y:m.y+dy},{x:m.x-1,y:m.y},{x:m.x+1,y:m.y},{x:m.x,y:m.y-1},{x:m.x,y:m.y+1}];
+  for(const t of spots){
+    if(t.x>=0&&t.x<W&&t.y>=0&&t.y<H && passable(t.x,t.y) && !(t.x===player.x&&t.y===player.y)){
+      ally.x=t.x; ally.y=t.y; break;
+    }
+  }
+  draw();
+}
+function hasFlanking(){ return ally.active && activeMonster && Math.abs(ally.x-activeMonster.x)+Math.abs(ally.y-activeMonster.y)===1 && Math.abs(player.x-activeMonster.x)+Math.abs(player.y-activeMonster.y)===1; }
+function playerAttackBonus(){ return player.prof + player.str + player.inventory.reduce((s,it)=>s+(it.mod?.attack||0),0) + (player.buff?.attack||0); }
+function playerTurn(){
+  if(!activeMonster) return;
+  const advantage = hasFlanking();
+  let roll = d20(); if(advantage){ const r2=d20(); roll=Math.max(roll,r2); narrate("Flanking advantage! (2d20, keep higher)"); }
+  const bonus=playerAttackBonus(), total=roll+bonus; sfx('attack'); combat(`You roll d20: ${roll} + ${withSign(bonus)} = ${total}`);
+  if(roll===20 || total>=activeMonster.ac){ const dmg=rollDamage([1,6]) + (player.str>0?1:0); activeMonster.hp-=dmg; sfx('hit'); combat(`Hit! ${dmg} damage. ${activeMonster.name} HP: ${Math.max(activeMonster.hp,0)}`); }
+  else { sfx('miss'); combat(`Miss!`); narrate(randomQuip('miss')); }
+  if(activeMonster.hp<=0){
+    narrate(`${activeMonster.name} is defeated!`);
+    if(activeMonster.id==="goblin" && !didLevelGate){ completeQuest("defeat-goblin"); didLevelGate=true; triggerLevelUpOverlay(); }
+    if(activeMonster.id==="skeleton-captain"){ completeQuest("clear-crypt"); const payout=ally.active?25:50; addGold(payout); narrate(ally.active ? `You split the 50g bounty with ${ally.name}. You receive ${payout}g.` : `You claim the 50g bounty.`); }
+    if(activeMonster.id==="bandit-chief"){ completeQuest("stop-bandit-chief"); addGold(75); narrate("The bandit menace falters."); }
+    monsters.splice(monsters.indexOf(activeMonster),1); activeMonster=null; state="explore"; draw(); if (player.hp < player.maxHp && hasPotion()) narrate("Tip: Press H to drink a potion or tap a potion in your bag."); return;
+  }
+  monsterTurn();
+}
+function monsterTurn(){
+  if(!activeMonster) return;
+  const roll=d20(), total=roll+activeMonster.attackBonus, targetAC=getAC(); sfx('attack'); combat(`${activeMonster.name} rolls d20: ${roll} + ${withSign(activeMonster.attackBonus)} = ${total}`);
+  if(roll===20 || total>=targetAC){ const dmg=rollDamage(activeMonster.dmg); player.hp-=dmg; sfx('hit'); vib(100); combat(`You are hit for ${dmg}. HP: ${Math.max(player.hp,0)}/${player.maxHp}`); }
+  else { sfx('miss'); combat(`${activeMonster.name} misses.`); narrate(randomQuip('enemyMiss')); }
+  if(player.hp<=0){ narrate(`You fall... Reload to try again.`); state="defeated"; } else { narrate(`(Press Enter to attack)`); }
+  renderHUD();
+}
+function hasPotion(){ return player.inventory.some(i=> typeof i.use==="function" && /potion|herb/i.test((i.id||"") + " " + (i.name||""))); }
+function pickBestPotion(){
+  const pots = player.inventory.filter(i => typeof i.use==="function" && /potion|herb/i.test((i.id||"") + " " + (i.name||"")));
+  if (!pots.length) return null;
+  pots.sort((a,b)=> (/(strong)/i.test((b.id||"")+b.name) ? 1 : 0) - (/(strong)/i.test((a.id||"")+a.name) ? 1 : 0));
+  return pots[0];
+}
+function tryDrinkPotion(){
+  if (state === "combat") { narrate("Too hectic to rummage your bag mid-swing. (Use potions after the fight.)"); return; }
+  const pot = pickBestPotion(); if (!pot) { narrate("You don't have a potion."); return; }
+  useItemById(pot.id); draw();
+}
+function useItemById(id){
+  const idx=player.inventory.findIndex(i=>i.id===id);
+  if(idx>=0){ const it=player.inventory[idx]; if(typeof it.use==="function"){ if(/potion|herb/i.test((it.id||"") + " " + (it.name||""))) addProgress('potions',1); it.use(); lootMsg(`Used ${it.name}.`); sfx('pickup'); vib(30); player.inventory.splice(idx,1); renderHUD(); } }
+}
+
+function getAC(){ return player.ac + player.inventory.reduce((s,it)=>s+(it.mod?.ac||0),0) + (player.buff?.ac||0); }
+function d20(){ return 1 + Math.floor(Math.random()*20); }
+function rollDamage([n,s]){ let sum=0; for(let i=0;i<n;i++) sum += 1 + Math.floor(Math.random()*s); return sum; }
+
+/* ===== Room switching & Level up ===== */
+function setRoom(toIndex,tx,ty){
+  roomIndex=toIndex; const r=rooms[roomIndex];
+  map=r.map; npcs=r.npcs; items=r.items; monsters=r.monsters; chests=r.chests||[]; altars=r.altars||[]; traps=r.traps||[]; seen=r.seen;
+  player.x=tx; player.y=ty; player.buff={ac:0,attack:0}; wasNearDoor=false; narrate(`You enter ${r.name}.`); sfx('door'); stepTrail.length=0; if(ally.active){ ally.x=player.x; ally.y=player.y; } draw(); fitScale();
+}
+function triggerLevelUpOverlay(){
+  player.level = 2; player.maxHp += 4; player.ac += 1; player.hp = player.maxHp;
+  lvlupDetails.textContent = "You reached Level 2! +4 Max HP, +1 AC. Your wounds knit and resolve steels.";
+  renderHUD(); state="levelup"; document.getElementById('lvlup').classList.add('show');
+}
+document.getElementById('lvlup-continue').addEventListener('click', ()=>{ document.getElementById('lvlup').classList.remove('show'); loadLevel(1); });
+function loadLevel(newLevelIndex){
+  levelIndex = newLevelIndex; rooms = (levelIndex===0) ? WORLD1 : WORLD2; clearQuests(); if(levelIndex===1){ addQuest("stop-bandit-chief","Stop the Bandit Chief","Defeat the brigand leader (75g)."); }
+  roomIndex=0; map=rooms[0].map; npcs=rooms[0].npcs; items=rooms[0].items; monsters=rooms[0].monsters; chests=rooms[0].chests||[]; altars=rooms[0].altars||[]; traps=rooms[0].traps||[]; seen=rooms[0].seen;
+  player.x=2; player.y=2; player.buff={ac:0,attack:0}; if (ally.active){ ally.x=player.x; ally.y=player.y; }
+  narrate(levelIndex===1 ? "You step into a brighter land—the road hums with trouble." : "Back to the halls."); state="explore"; draw(); fitScale();
+}
+
+/* ===== Quips ===== */
+const QUIP={ wall:[ "You hit a wall. Your health remains the same—but your ego takes a hit.","Brick 1, You 0.","The wall is unimpressed." ], noTarget:[ "You swing your sword and slice nothing but air.","You threaten the void. The void is chill." ], miss:[ "You swing and miss. A draft applauds.","That was a warning swing. Obviously." ], enemyMiss:[ "They whiff spectacularly.","You matrix-dodge on accident." ], doorLocked:[ "It's locked. The door respects boundaries.","A keyhole squints at you. You feel judged." ], monsterBlock:[ "You attempt to slide by, but the monster says ‘nah.’" ]};
+const randomQuip=(cat)=>{ const a=QUIP[cat]||[]; return a[Math.floor(Math.random()*a.length)]||""; };
+
+/* ===== Simple cosmetics & codex (stubs) ===== */
+function openCosmetics(){ state="dialog"; const opts=[ {label:"Aura",stay:true,run(){ narrate("Cosmetics placeholder"); openCosmetics(); }}, {label:"Close",run(){ state="explore"; }} ]; logChoice({ speaker:"Cosmetics", text:"Equip your flair.", options:opts, tint:"#7fb7ff" }); }
+function openCodex(){
+  state="dialog";
+  const cats=[{cat:'locations',label:`Locations`},{cat:'npcs',label:`NPCs`},{cat:'monsters',label:`Monsters`},{cat:'items',label:`Items`}];
+  const opts=cats.map(c=>({ label:c.label, stay:true, run(){ narrate("Open the codex entry list."); openCodex(); } })); opts.push({label:"Close",run(){ state='explore'; }});
+  logChoice({ speaker:"Codex", text:"What would you like to review?", options:opts, tint:"#7fb7ff" });
+}
+
+/* ===== Audio (SFX + YouTube) ===== */
+const AUDIO={ctx:null,started:false,master:null,sfx:null,musicOn:true};
+let YTReady=false, YTPlayer=null, pendingYTPlay=false; const YT_VIDEO_ID='wScEFaoqwPM';
+function onYouTubeIframeAPIReady(){ YTReady=true; initYT(); }
+function initYT(){
+  if (!YTReady || YTPlayer) return;
+  YTPlayer = new YT.Player('yt-player', { videoId: YT_VIDEO_ID, width:'1', height:'1',
+    playerVars:{autoplay:0, controls:0, disablekb:1, fs:0, modestbranding:1, rel:0, playsinline:1, loop:1, playlist:YT_VIDEO_ID},
+    events:{ onReady:()=>{ if(pendingYTPlay && AUDIO.musicOn) startYouTubeMusic(); }, onStateChange:(e)=>{ if(e.data===YT.PlayerState.ENDED) YTPlayer.playVideo(); } }
+  });
+}
+function ensureAudio(){
+  if (AUDIO.started){ if (AUDIO.musicOn) startYouTubeMusic(); return; }
+  try{
+    AUDIO.ctx=new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=AUDIO.ctx; AUDIO.master=ctx.createGain(); AUDIO.master.gain.value=0.9; AUDIO.sfx=ctx.createGain(); AUDIO.sfx.gain.value=0.8; AUDIO.sfx.connect(AUDIO.master); AUDIO.master.connect(ctx.destination); AUDIO.started=true;
+    if (AUDIO.musicOn) startYouTubeMusic(); updateButtons();
+  }catch(e){console.warn("Audio init failed",e);}
+}
+function startYouTubeMusic(){ if(!YTReady||!YTPlayer){ pendingYTPlay=true; return; } pendingYTPlay=false; try{ YTPlayer.setVolume(25); if (AUDIO.musicOn) YTPlayer.playVideo(); }catch(e){} }
+function stopYouTubeMusic(){ try{ if(YTPlayer) YTPlayer.pauseVideo(); }catch(e){} }
+function toggleMusic(){ ensureAudio(); AUDIO.musicOn=!AUDIO.musicOn; if(AUDIO.musicOn) startYouTubeMusic(); else stopYouTubeMusic(); updateButtons(); }
+function updateButtons(){ document.getElementById('musicBtn').textContent=AUDIO.musicOn?"🎵 Music: On":"🎵 Music: Off"; document.getElementById('soundBtn').textContent=(AUDIO.ctx && AUDIO.ctx.state==='running')?"🔈 Sound: On":"🔇 Sound: Off"; }
+
+/* SFX */
+function now(){ return AUDIO.ctx ? AUDIO.ctx.currentTime : 0; }
+function tone(freq=440, type='square', dur=0.12, vol=0.6, attack=0.005, release=0.08){
+  if (!AUDIO.ctx) return; const ctx=AUDIO.ctx, t=now();
+  const o=ctx.createOscillator(); o.type=type; o.frequency.value=freq;
+  const g=ctx.createGain(); g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(vol, t+attack); g.gain.exponentialRampToValueAtTime(0.0001, t+Math.max(attack, dur)+release);
+  o.connect(g); g.connect(AUDIO.sfx); o.start(t); o.stop(t + dur + release + 0.05);
+}
+function sweep(f1=800,f2=180,dur=0.2,type='sawtooth',vol=0.5){
+  if (!AUDIO.ctx) return; const ctx=AUDIO.ctx, t=now();
+  const o=ctx.createOscillator(); o.type=type; o.frequency.setValueAtTime(f1, t); o.frequency.exponentialRampToValueAtTime(Math.max(20,f2), t+dur);
+  const g=ctx.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t+dur);
+  o.connect(g); g.connect(AUDIO.sfx); o.start(t); o.stop(t+dur+0.05);
+}
+function noiseBurst(dur=0.06, vol=0.6, type='lowpass', cutoff=800){
+  if (!AUDIO.ctx) return; const ctx=AUDIO.ctx; const buffer = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate); const data = buffer.getChannelData(0); for(let i=0;i<data.length;i++) data[i] = Math.random()*2-1;
+  const src = ctx.createBufferSource(); src.buffer = buffer; const g = ctx.createGain(); g.gain.value = vol;
+  let filter=null; if(type){ filter=ctx.createBiquadFilter(); filter.type=type; filter.frequency.value=cutoff; src.connect(filter); filter.connect(g);} else src.connect(g);
+  g.connect(AUDIO.sfx); src.start();
+}
+function sfx(kind){
+  ensureAudio(); if (!AUDIO.ctx || AUDIO.ctx.state!=='running') return;
+  switch(kind){
+    case 'walk': noiseBurst(0.04, 0.25, 'lowpass', 600); break;
+    case 'talk': tone(880, 'triangle', 0.06, 0.25); break;
+    case 'pickup': tone(1200,'triangle',0.08,0.35); setTimeout(()=>tone(1600,'triangle',0.08,0.3),55); break;
+    case 'door': sweep(300,120,0.25,'sawtooth',0.35); break;
+    case 'locked': tone(220,'square',0.1,0.3); break;
+    case 'attack': sweep(900,200,0.12,'sawtooth',0.3); break;
+    case 'hit': noiseBurst(0.07,0.5,'lowpass',900); tone(160,'sine',0.07,0.25); break;
+    case 'miss': tone(300,'triangle',0.08,0.2); break;
+    case 'trap': noiseBurst(0.09,0.6,'bandpass',1400); break;
+    case 'bless': tone(660,'triangle',0.12,0.28); setTimeout(()=>tone(990,'triangle',0.12,0.24),80); break;
+    case 'chest': sweep(400,800,0.18,'triangle',0.28); break;
+    case 'bump': tone(180,'sine',0.05,0.2); break;
+  }
+}
+
+/* ===== Responsive scaling ===== */
+function clampNum(n, min, max){ return Math.max(min, Math.min(max, n)); }
+function fitScale(){
+  // Keep desktop visuals unchanged
+  const isDesktop = window.matchMedia('(min-width: 1200px)').matches && window.matchMedia('(pointer: fine)').matches;
+  if (isDesktop) { document.documentElement.style.setProperty('--scale', '3'); return; }
+
+  // Mobile/tablet: compute scale from viewport (not container)
+  const vw = Math.min(window.innerWidth, document.documentElement.clientWidth);
+  const vh = window.innerHeight; // ok for modern mobile browsers
+
+  // grid’s unscaled pixel size (16px cells, 1px gaps)
+  const baseCell = 16;
+  const baseGap  = 1;
+  const targetW = baseCell * 16 + baseGap * (16 - 1);
+  const targetH = baseCell * 12 + baseGap * (12 - 1);
+
+  // coarse padding budget for title/HUD/HP bar/touchpad
+  const padW = 24;
+  const padH = 240;
+
+  const availW = Math.max(0, vw - padW);
+  const availH = Math.max(0, vh - padH);
+
+  let scaleFromWidth  = Math.floor(availW / targetW);
+  let scaleFromHeight = Math.floor(availH / targetH);
+  let scale = Math.min(scaleFromWidth, scaleFromHeight);
+
+  // allow 1× on very small phones; cap at 8×
+  scale = clampNum(scale, 1, 8);
+
+  document.documentElement.style.setProperty('--scale', String(scale));
+}
+function initResponsive(){
+  requestAnimationFrame(fitScale);
+  window.addEventListener('resize', fitScale, { passive:true });
+  window.addEventListener('orientationchange', () => setTimeout(fitScale, 60), { passive:true });
+  window.addEventListener('touchstart', ensureAudio, { once:true, passive:true });
+
+  const tp = document.getElementById('touchpad');
+  if (tp){
+    tp.addEventListener('click', (e)=>{
+      const b = e.target.closest('button[data-a]'); if (!b) return;
+      const act = b.getAttribute('data-a');
+      switch(act){
+        case 'up':    tryMove(0, -1); break;
+        case 'down':  tryMove(0,  1); break;
+        case 'left':  tryMove(-1, 0); break;
+        case 'right': tryMove( 1, 0); break;
+        case 'use':   tryUse(); break;
+        case 'fight': tryFight(); break;
+        case 'pick':  tryPickup(); break;
+        case 'heal':  tryDrinkPotion(); break;
+      }
+    });
+  }
+
+  // swipe to move on map
+  let t0=null;
+  document.querySelector('.map').addEventListener('touchstart', (e)=>{
+    if (!e.touches[0]) return; t0 = { x:e.touches[0].clientX, y:e.touches[0].clientY, t:Date.now() };
+  }, {passive:true});
+  document.querySelector('.map').addEventListener('touchend', (e)=>{
+    if (!t0) return;
+    const dx=(e.changedTouches[0]?.clientX || t0.x) - t0.x;
+    const dy=(e.changedTouches[0]?.clientY || t0.y) - t0.y;
+    const ax=Math.abs(dx), ay=Math.abs(dy); const dt=Date.now()-t0.t; t0=null;
+    if (dt>400 || Math.max(ax,ay)<24) return;
+    if (ax>ay) { tryMove(dx>0?1:-1,0); } else { tryMove(0, dy>0?1:-1); }
+  }, {passive:true});
+}
+
+/* ===== Mobile Tabs ===== */
+function initMobileTabs(){
+  const tabsEl = document.getElementById('mobileTabs');
+  if (!tabsEl) return;
+  function setTab(tab){
+    const hud = document.getElementById('hudPanel');
+    const log = document.getElementById('logPanel');
+    const isSmall = window.matchMedia('(max-width: 900px)').matches;
+    if (isSmall){
+      hud.style.display = (tab==='bag') ? '' : 'none';
+      log.style.display = (tab==='log') ? '' : 'none';
+    } else { hud.style.display=''; log.style.display=''; }
+    [...tabsEl.querySelectorAll('.tab')].forEach(b=>{
+      const active = b.dataset.tab===tab; b.classList.toggle('active', active); b.setAttribute('aria-selected', active?'true':'false');
+    });
+  }
+  tabsEl.addEventListener('click', (e)=>{ const b = e.target.closest('.tab'); if (!b) return; setTab(b.dataset.tab); });
+  window.addEventListener('resize', ()=> setTab('bag'), { passive:true });
+  setTab('bag');
+}
+
+/* ===== Boot ===== */
+function bootstrap(){
+  // meta bonuses (if any)
+  player.maxHp += META.hpBonus||0; player.ac += META.acBonus||0; player.hp = player.maxHp;
+  for (let i=0;i<(META.startPotion||0);i++){ player.inventory.push({ id:`meta-potion-${i}-${Date.now()}`, name:"Small Potion (+4 HP)", use:()=>heal(4) }); }
+  draw(); initResponsive(); initMobileTabs();
+  narrate("You awaken in a dim stone room.");
+  say("Sage","Approach and speak, traveler.","#7fb7ff");
+  addQuest("defeat-goblin","Defeat the Goblin","Slay the red fiend lurking to the east.");
+  narrate("Move: Arrows/WASD (or swipe / D-pad). E talk/use. ␣ pick up. F fight. H heal. Enter continue. 1–9 choose. M music.");
+}
+bootstrap();
+
+/* ===== HP / Heal helpers ===== */
+function heal(amount){
+  const before=player.hp; player.hp=Math.min(player.maxHp, player.hp+amount);
+  const gained=player.hp-before; if(gained>0) narrate(`Healed ${gained} HP.`); renderHUD();
+}
+</script>
+</body>
+</html>
