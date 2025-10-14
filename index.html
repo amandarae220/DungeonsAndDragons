@@ -888,11 +888,6 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
         <input id="soundToggle" type="checkbox" />
         <span>Sound effects</span>
       </label>
-
-      <label class="choice-btn" style="display:flex;align-items:center;gap:10px;">
-        <input id="musicToggle" type="checkbox" />
-        <span>Music</span>
-      </label>
     </div>
 
     <div class="actions">
@@ -925,8 +920,8 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
     </ul>
 
     <div class="welcome-actions">
-      <button id="welcome-mute" class="btn" title="Start without background music">Start (Silent)</button>
-      <button id="welcome-start" class="btn cta" title="Start and play background music">Start Adventure</button>
+      <button id="welcome-mute" class="btn">Start Adventure</button>
+      <!--button id="welcome-start" class="btn cta" title="Start and play background music">Start Adventure</button-->
     </div>
   </div>
 </div>
@@ -945,10 +940,6 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
     </div>
   </div>
 </div>
-
-<!-- Music (YouTube) -->
-<div id="yt-player" aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px"></div>
-<script src="https://www.youtube.com/iframe_api"></script>
 
 <script>
 /* =========================================================
@@ -2513,7 +2504,7 @@ function resetGame(){
   applyRoomTheme();
   playMusicFor(state.room);
   updateTavernFastTravel();
-  logEntry('dialog','Sage: A red fiend lurks east. End it.','#7fb7ff');
+  //logEntry('dialog','Sage: A red fiend lurks east. End it.','#7fb7ff');
 }
 
 /* =========================================================
@@ -2619,90 +2610,6 @@ function initMobileTabs(){
 }
 
 /* =========================================================
-   MUSIC / SOUND
-   ========================================================= */
-
-const TRACKS = {
-  dungeon: '5qap5aO4i9A', 
-  shop:    '2OEL4P1Rz04',
-  tavern:  '2OEL4P1Rz04'
-};
-
-function trackForRoom(room){
-  if (room === 'shop') return TRACKS.shop;
-  if (room === 'tavern' || room === 'town') return TRACKS.tavern;
-  return TRACKS.dungeon;
-}
-
-// ---- Music player wiring----
-let ytPlayer, currentTrack = null, pendingTrack = null, retryTimer = null;
-
-function setYouTubeVideo(id){
-  if (!ytPlayer){ pendingTrack = id; return; }
-  if (currentTrack === id){
-    if (state.musicOn && AudioEngine.unlocked){
-      try { ytPlayer.playVideo(); } catch(e){}
-    }
-    return;
-  }
-  currentTrack = id;
-  try { ytPlayer.loadVideoById(id); } catch(e){}
-  if (state.musicOn && AudioEngine.unlocked){
-    try { ytPlayer.playVideo(); } catch(e){}
-  } else {
-    try { ytPlayer.pauseVideo(); } catch(e){}
-  }
-}
-
-function playMusicFor(room){
-  setYouTubeVideo(trackForRoom(room));
-}
-
-function nudgePlayLater(ms=300){
-  clearTimeout(retryTimer);
-  retryTimer = setTimeout(()=>{
-    if (!ytPlayer) return;
-    if (state.musicOn && AudioEngine.unlocked){
-      try { ytPlayer.playVideo(); } catch(e){}
-    }
-  }, ms);
-}
-
-window.onYouTubeIframeAPIReady = function(){
-  ytPlayer = new YT.Player('yt-player', {
-    videoId: trackForRoom(state.room),
-    playerVars: {
-      autoplay: 1,
-      loop: 1,
-      playlist: trackForRoom(state.room), 
-      playsinline: 1
-    },
-    events: {
-      onReady: (e)=>{
-        if (pendingTrack) setYouTubeVideo(pendingTrack);
-        if (state.musicOn){
-          try { e.target.playVideo(); } catch(err){}
-        } else {
-          try { e.target.pauseVideo(); } catch(err){}
-        }
-        nudgePlayLater(500);
-      },
-      onStateChange: (ev)=>{
-        if (ev.data === YT.PlayerState.CUED || ev.data === YT.PlayerState.PAUSED){
-          if (state.musicOn && AudioEngine.unlocked) nudgePlayLater(250);
-        }
-      },
-      onError: ()=>{
-        if (currentTrack !== TRACKS.shop){
-          currentTrack = null;
-          setYouTubeVideo(TRACKS.shop);
-        }
-      }
-    }
-  });
-};
-
-/* =========================================================
    AUDIO ENGINE (Music unlock + SFX)
    ========================================================= */
 const AudioEngine = {
@@ -2722,10 +2629,6 @@ const AudioEngine = {
       this.ctx.resume();
     }catch(e){}
     this.unlocked = true;
-
-    try{
-      if (ytPlayer && state.musicOn) ytPlayer.playVideo();
-    }catch(e){}
   },
 
   // Simple tone helper
@@ -2798,28 +2701,16 @@ document.getElementById('settings-close').onclick = ()=>{
 
 // Toggle inputs
 document.getElementById('soundToggle').addEventListener('change', e => setSound(e.target.checked));
-document.getElementById('musicToggle').addEventListener('change', e => setMusic(e.target.checked));
 
 function updateSettingsUI(){
   const st = document.getElementById('soundToggle');
-  const mt = document.getElementById('musicToggle');
   if(st) st.checked = !!state.soundOn;
-  if(mt) mt.checked = !!state.musicOn;
 }
 
 function setSound(on){
   state.soundOn = !!on;
   updateSettingsUI();
 }
-
-function setMusic(on){
-  state.musicOn = !!on;
-  if (ytPlayer && ytPlayer.getPlayerState){
-    on ? ytPlayer.playVideo() : ytPlayer.pauseVideo();
-  }
-  updateSettingsUI();
-}
-
 
 /* =========================================================
    ROOM THEMES
@@ -2928,50 +2819,9 @@ const welcomeEl = document.getElementById('welcome');
 const welcomeStart = document.getElementById('welcome-start');
 const welcomeMute = document.getElementById('welcome-mute');
 
-// Start with music ON
-welcomeStart.addEventListener('click', () => {
-  // user gesture → unlock audio contexts + YouTube
-  AudioEngine.unlock();
-  state.musicOn = true;
-  updateSettingsUI();
-
-  // ensure correct track is loaded for the current room and try to play
-  playMusicFor(state.room);
-  try { if (ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); } catch(e){}
-
-  welcomeEl.classList.remove('show');
-  logEntry('dialog', 'Sage: A red fiend lurks east. End it.', '#7fb7ff');
-});
-
 // Start without music
 welcomeMute.addEventListener('click', () => {
-  AudioEngine.unlock();          
-  state.musicOn = false;
   updateSettingsUI();
-  try { if (ytPlayer && ytPlayer.pauseVideo) ytPlayer.pauseVideo(); } catch(e){}
-  welcomeEl.classList.remove('show');
-  logEntry('dialog', 'Sage: A red fiend lurks east. End it.', '#7fb7ff');
-});
-
-// Start with music ON
-welcomeStart.addEventListener('click', () => {
-  AudioEngine.unlock();              
-  state.musicOn = true;
-  updateSettingsUI();
-  playMusicFor(state.room);
-  try { if (ytPlayer && ytPlayer.playVideo) ytPlayer.playVideo(); } catch(e){}
-  setTimeout(()=>{ try{ ytPlayer && ytPlayer.playVideo(); }catch(e){} }, 200);
-
-  welcomeEl.classList.remove('show');
-  logEntry('dialog', 'Sage: A red fiend lurks east. End it.', '#7fb7ff');
-});
-
-// Start without music
-welcomeMute.addEventListener('click', () => {
-  AudioEngine.unlock();            
-  state.musicOn = false;
-  updateSettingsUI();
-  try { ytPlayer && ytPlayer.pauseVideo && ytPlayer.pauseVideo(); } catch(e){}
   welcomeEl.classList.remove('show');
   logEntry('dialog', 'Sage: A red fiend lurks east. End it.', '#7fb7ff');
 });
