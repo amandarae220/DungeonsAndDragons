@@ -135,6 +135,29 @@ body {
   user-select:none; -webkit-user-select:none;
   width:max-content;
 }
+
+/* ====== Grid Legend ====== */
+.legend{
+  display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;
+  font-size:13px; color:var(--muted);
+}
+.legend .key{
+  display:inline-flex; align-items:center; gap:6px;
+  padding:4px 8px; border:1px solid var(--border);
+  background:#0f1117; border-radius:8px;
+}
+.legend .sw{
+  width:14px; height:14px; border-radius:3px;
+  box-shadow: inset 0 0 0 1px rgba(0,0,0,.35);
+}
+.legend .sw.player  { background: var(--warn);   } /* yellow */
+.legend .sw.ally    { background: #ff9bf3;       } /* pink   */
+.legend .sw.npc     { background: var(--info);   } /* blue   */
+.legend .sw.item    { background: var(--accent); } /* green  */
+.legend .sw.monster { background: var(--bad);    } /* red    */
+.legend .sw.door    { background: #3b2b1a;       } /* brown  */
+.legend .sw.wall    { background: #1e2430;       } /* slate  */
+
 .cell{
   width:var(--cell); height:var(--cell);
   background:#0f1218;
@@ -209,14 +232,27 @@ body {
 .fog-seen  { filter:brightness(0.55); }
 
 /* Entities */
-.player::after,.ally::after,.npc::after,.item::after,.monster::after{
-  content:""; position:absolute; inset:20%; border-radius:calc(2px * var(--scale));
+.grid .cell.player::after,
+.grid .cell.ally::after,
+.grid .cell.npc::after,
+.grid .cell.item::after,
+.grid .cell.monster::after{
+  content:"";
+  position:absolute;
+  inset:20%;
+  border-radius:calc(2px * var(--scale));
 }
 .player::after  { background:var(--warn); box-shadow:0 0 0 calc(2px * var(--scale)) rgba(0,0,0,.25); }
 .ally::after    { background:#ff9bf3; }
 .npc::after     { background:var(--info); }
 .item::after    { background:var(--accent); }
 .monster::after { background:var(--bad); }
+
+.legend .sw.player::after,
+.legend .sw.ally::after,
+.legend .sw.npc::after,
+.legend .sw.item::after,
+.legend .sw.monster::after{ content:none !important; }
 
 @keyframes pulse { 0%{outline-color:#d9ff76} 50%{outline-color:transparent} 100%{outline-color:#d9ff76} }
 .cursor{ outline:calc(2px * var(--scale)) solid #d9ff76; outline-offset:calc(-3px * var(--scale)); animation:pulse 1s ease-in-out infinite; }
@@ -770,7 +806,7 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
 <div class="wrap">
   <!-- LEFT: HUD -->
   <div id="hudPanel" class="panel hud">
-    <h3 class="section-title">Hero</h3>
+    <h3 class="section-title">Character Stats</h3>
     <div id="stats" class="stats-row"></div>
 
     <h3 class="section-title" style="margin-top:10px;">Inventory</h3>
@@ -784,8 +820,11 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
     <details class="accordion" style="margin-top:10px">
       <summary>Instructions</summary>
       <div class="accordion-body">
-        <strong>Move:</strong> Arrow Keys / WASD, swipe, or D-pad.<br/>
-        <strong>E</strong> talk/use • <strong>Space</strong> pick up • <strong>F</strong> fight • <strong>H</strong> heal.<br/>
+        <strong>Move:</strong> Arrow Keys or D-pad.<br/>
+        <strong>Use/Talk:</strong> E<br/>
+        <strong>Pick Up:</strong> Space<br/>
+        <strong>Fight:</strong> F <br/>
+        <strong>Heal:</strong> H<br/>
         Tap a potion in your Bag to heal outside combat.
       </div>
     </details>
@@ -796,6 +835,16 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
     <div class="grid-wrap">
       <div class="hpbar"><div id="hpfill" class="hpbar-fill"></div><div id="hptext" class="hpbar-text">HP 10/10</div></div>
       <div id="grid" class="grid" aria-label="Dungeon grid"></div>
+
+        <!-- Color Legend -->
+        <div id="legend" class="legend" aria-label="Map legend">
+        <div class="key"><span class="sw player"></span> Player</div>
+        <div class="key"><span class="sw ally"></span> Ally</div>
+        <div class="key"><span class="sw npc"></span> NPC</div>
+        <div class="key"><span class="sw item"></span> Item</div>
+        <div class="key"><span class="sw monster"></span> Monster</div>
+        </div>
+
     </div>
   </div>
 
@@ -953,6 +1002,19 @@ const withSign=n=>(n>=0?"+":"")+n;
 const escapeHTML=s=>String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 function vib(ms=30){ if(navigator.vibrate) try{navigator.vibrate(ms)}catch(e){} }
 
+// --- input timing guards ---
+let __lastUseAt = 0;
+function justPressedUse(debounceMs=180){
+  const now = performance.now();
+  if (now - __lastUseAt < debounceMs) return true;
+  __lastUseAt = now;
+  return false;
+}
+
+// Blocks movement/use for a moment after goTo() to prevent "leaked" key repeats
+let __roomLockUntil = 0;
+function roomLocked(){ return performance.now() < __roomLockUntil; }
+
 const TYPE_COLOR = {
   dialog:'#7fb7ff',
   loot:'#7fd962',
@@ -1009,7 +1071,7 @@ const logEl=document.getElementById('log'), logTitle=document.getElementById('lo
 
 const state={
   level:1, hpMax:10, hp:10, ac:12, str:+2, dex:+1, atk:+4, cha:+1,
-  pos:{x:2,y:2}, gold:0,
+  pos:{x:2,y:2}, lastDir:{x:0,y:0}, gold:0,
   inventory:[{id:'potion',name:'Healing Potion',qty:1,type:'potion'}],
   codex:[], ally:null,
   allyPos: null,
@@ -1102,18 +1164,6 @@ function setDialogStatus(lines, tone='system'){
   statusEl.innerHTML = (Array.isArray(lines) ? lines : [lines])
     .map(s=>`<div>${s}</div>`).join('');
 }
-
-function openDialog(title,text){
-  document.getElementById('dialog-title').textContent = title || 'Conversation';
-  dialogText.textContent = text || '';
-  dialogChoices.innerHTML = '';
-  clearDialogStatus();             
-  dialogEl.classList.add('show');
-}
-document.getElementById('dialog-leave').onclick = ()=>{
-  dialogEl.classList.remove('show');
-  clearDialogStatus();            
-};
 
 function hpBadge(curr, max){
   const pct = Math.max(0, Math.min(100, Math.round((curr/max)*100)));
@@ -1642,6 +1692,10 @@ function epilogueLines(){
 }
 
 function showFreezeFrameEnding(){
+  // Show the ending overlay (this was missing)
+  const endingEl = document.getElementById('ending');
+  endingEl.classList.add('show');
+
   // Stage: show ally or not, restart animation
   const stage = document.getElementById('hi5');
   stage.dataset.hasAlly = state.ally ? "1" : "0";
@@ -1667,29 +1721,23 @@ function showFreezeFrameEnding(){
 
   const ep = epilogueLines().map(s=>`<li>${escapeHTML(s)}</li>`).join('');
 
-const creditsHost = document.getElementById('credits');
+  const creditsHost = document.getElementById('credits');
+  const innerHTML =
+    `${lines}
+     <h3 class="section-title" style="margin-top:12px">How they’re doing now</h3>
+     <ul class="hows">${ep}</ul>`;
 
-// build inner HTML (stats lines + epilogue)
-const innerHTML =
-  `${lines}
-   <h3 class="section-title" style="margin-top:12px">How they’re doing now</h3>
-   <ul class="hows">${ep}</ul>`;
+  creditsHost.innerHTML = `<div class="credits-inner" id="creditsInner">${innerHTML}</div>`;
 
-// mount into an inner wrapper that will animate
-creditsHost.innerHTML = `<div class="credits-inner" id="creditsInner">${innerHTML}</div>`;
-
-// after it’s in the DOM, compute a sensible duration based on height
-requestAnimationFrame(()=>{
-  const inner = document.getElementById('creditsInner');
-  const hostH = creditsHost.getBoundingClientRect().height;
-  const innerH = inner.getBoundingClientRect().height;
-
-  const pxPerSec = 36;
-  const dur = Math.max(14, Math.min(60, (innerH + hostH) / pxPerSec));
-
-  creditsHost.style.setProperty('--rollDur', `${dur}s`);
-});
-
+  // After mount, compute a sensible roll duration based on content height
+  requestAnimationFrame(()=>{
+    const inner = document.getElementById('creditsInner');
+    const hostH = creditsHost.getBoundingClientRect().height;
+    const innerH = inner.getBoundingClientRect().height;
+    const pxPerSec = 36;
+    const dur = Math.max(14, Math.min(60, (innerH + hostH) / pxPerSec));
+    creditsHost.style.setProperty('--rollDur', `${dur}s`);
+  });
 }
 
 // Ending buttons
@@ -2054,6 +2102,95 @@ function hideVersusCard(){
   if(box) box.remove();
 }
 
+function doorUnderOrAdjacent(pos){
+  const {x,y} = pos;
+  const R = rooms[state.room];
+  const checks = [
+    {x,   y,    side:'on'},   // ← NEW: standing on the door tile
+    {x:x+1,y,   side:'east'},
+    {x:x-1,y,   side:'west'},
+    {x,   y:y+1,side:'south'},
+    {x,   y:y-1,side:'north'}
+  ];
+  for (const p of checks){
+    if (R.doors.has(key(p.x,p.y))) return p;
+  }
+  return null;
+}
+
+function tryUse(){
+  const { x, y } = state.pos;
+
+  // 1) If you are standing ON an NPC, talk to them
+  const npcHere = rooms[state.room].npcs[key(x, y)];
+  if (npcHere){
+    openDialog(npcHere.name,'');
+    const say=(t,type='dialog')=>{ dialogText.textContent=t; logEntry(type,t,npcHere.portrait); };
+    const choose=(arr)=>{ dialogChoices.innerHTML=''; arr.forEach(o=>addChoice(o.label,o.hint,()=>o.action())); };
+    npcHere.script(say,choose);
+    return;
+  }
+
+  // 2) Otherwise, if an NPC is adjacent, also allow talking
+  for (const [cx,cy] of [[x+1,y],[x-1,y],[x,y+1],[x,y-1]]){
+    const npc = rooms[state.room].npcs[key(cx,cy)];
+    if (npc){
+      openDialog(npc.name,'');
+      const say=(t,type='dialog')=>{ dialogText.textContent=t; logEntry(type,t,npc.portrait); };
+      const choose=(arr)=>{ dialogChoices.innerHTML=''; arr.forEach(o=>addChoice(o.label,o.hint,()=>o.action())); };
+      npc.script(say,choose);
+      return;
+    }
+  }
+
+  // 3) Door handling (same as before)
+  const door = adjacentDoorFrom(state.pos);
+
+  // If standing ON a door tile, force the player to step off and face it.
+  if (!door){
+    logEntry('system','There is nothing obvious to use here.');
+    return;
+  }
+
+  // Decide side based on actual door coordinate (works even if you're standing ON it).
+  const isRightDoor = (door.x === W-1);
+  const isLeftDoor  = (door.x === 0 || door.x === 1);
+  const isTopDoor   = (door.y === 0 || door.y === 1);
+  const isBotDoor   = (door.y === H-1);
+
+  // Gate forward progression on objectives
+  const forwardBlocked =
+    (isRightDoor && !isLevelComplete(state.room)) ||
+    (isBotDoor   && !isLevelComplete(state.room));
+
+  if (forwardBlocked){
+    banner('dialog',"The door won’t budge. Finish your current objective first.");
+    return;
+  }
+
+  logEntry('door',"You pass through a creaky door.");
+  AudioEngine.door();
+  banner('dialog', pick(["Door: Speak ‘E’ and enter.","Door: *creaks in Common*","Door: Beyond lies plot."]));
+
+  // Router: use exact door coordinate and spawn INSIDE the room (never ON the door)
+  const r = state.room;
+
+  if (r==='level1' && isRightDoor)            return goTo('level2', {x:2,     y:5});
+  if (r==='level2' && isLeftDoor)             return goTo('level1', {x:W-2,   y:5});
+  if (r==='level2' && isRightDoor)            return goTo('shop',   {x:2,     y:5});
+  if (r==='shop'   && isLeftDoor)             return goTo('level2', {x:W-2,   y:5});
+  if (r==='shop'   && isRightDoor)            return goTo('level3', {x:2,     y:5});
+  if (r==='level3' && isLeftDoor)             return goTo('shop',   {x:W-2,   y:5});
+  if (r==='level3' && isRightDoor)            return goTo('level4', {x:2,     y:5});
+  if (r==='level4' && isLeftDoor)             return goTo('level3', {x:W-2,   y:5});
+  if (r==='level4' && isRightDoor)            return goTo('level5', {x:2,     y:5});
+  if (r==='level5' && isLeftDoor)             return goTo('level4', {x:W-2,   y:5});
+  if (r==='level5' && isRightDoor)            return goTo('tavern', {x:2,     y:5});
+  if (r==='tavern' && isLeftDoor)             return goTo('level5', {x:W-2,   y:5});
+
+  banner('system','The door is stubborn. It probably leads back.');
+}
+
 function monsterLastWords(mon){
   const pools = {
     goblin: [
@@ -2088,7 +2225,6 @@ function monsterLastWords(mon){
 function statsHTML(){
   return `
     <span class="stat-chip"><b>LV</b> ${state.level}</span>
-    <span class="stat-chip"><b>HP</b> ${state.hp}/${state.hpMax}</span>
     <span class="stat-chip"><b>AC</b> ${state.ac}</span>
     <span class="stat-chip"><b>STR</b> ${withSign(state.str)}</span>
     <span class="stat-chip"><b>DEX</b> ${withSign(state.dex)}</span>
@@ -2186,25 +2322,40 @@ function addChoice(label,hint,cb){
    ACTIONS
    ========================================================= */
 function tryMove(dx,dy){
-  const nx=clamp(state.pos.x+dx,0,W-1), ny=clamp(state.pos.y+dy,0,H-1);
+  if (roomLocked()) return;
 
-  if(isWall(nx,ny)){
+  const nx = clamp(state.pos.x+dx, 0, W-1);
+  const ny = clamp(state.pos.y+dy, 0, H-1);
+
+  // treat doors like walls for movement
+  if (isDoor(nx,ny)){
+    banner('dialog','Door: Press E to use.');
+    AudioEngine.door();
+    return;
+  }
+
+  if (isWall(nx,ny)){
     logEntry('system', pick(QUIP.wall));
-    AudioEngine.wall();                
+    AudioEngine.wall();
     return;
   }
 
   const prev = {x: state.pos.x, y: state.pos.y};
-  state.pos.x=nx; state.pos.y=ny; vib(10); reveal(nx,ny);
+  state.pos.x = nx; state.pos.y = ny;
+  state.lastDir = { x: dx, y: dy };
+  vib(10); reveal(nx,ny);
+  AudioEngine.step();
 
-  AudioEngine.step();   
-
-  if(state.ally && state.allyPos){
-    if(!isBlockedForAlly(prev.x, prev.y)){ state.allyPos = {x:prev.x, y:prev.y}; }
-    else { state.allyPos = stepTowards(state.allyPos, prev); }
+  // Absolute safety: if something put us ON a door, pop back
+  if (isDoor(state.pos.x, state.pos.y)){
+    state.pos = prev;
+    return;
   }
 
-  if(isDoor(nx,ny)) banner('dialog','You stand by a door. Press E to use it.');
+  if(state.ally && state.allyPos){
+    if(!isBlockedForAlly(prev.x, prev.y)) state.allyPos = {x:prev.x, y:prev.y};
+    else state.allyPos = stepTowards(state.allyPos, prev);
+  }
 
   checkAggro();
   render();
@@ -2220,89 +2371,27 @@ function doorCoordNearPlayer(){
   return null;
 }
 
-function tryUse(){
-  const {x,y}=state.pos;
-  const R = rooms[state.room];
-
-  const near = [[x,y],[x+1,y],[x-1,y],[x,y+1],[x,y-1]]
-    .map(([cx,cy]) => ({ cx, cy, k: key(cx,cy) }))
-    .find(({k}) => R.doors.has(k));
-
-  if (near){
-    const doorX = near.cx, doorY = near.cy;
-    const isBack    = (doorX <= 1);
-    const isForward = (doorX >= W-2);
-
-    if (isForward && !isLevelComplete(state.room)){
-      banner('dialog',"The door won’t budge. Finish your current objective first.");
-      return;
-    }
-
-    logEntry('door',"You pass through a creaky door.");
-    AudioEngine.door();               
-    banner('dialog', ["Door: Speak ‘E’ and enter.","Door: *creaks in Common*","Door: Beyond lies plot."].sort(()=>0.5-Math.random())[0]);
-
-    banner('dialog', ["Door: Speak ‘E’ and enter.","Door: *creaks in Common*","Door: Beyond lies plot."].sort(()=>0.5-Math.random())[0]);
-
-    if(state.room==='level1'){
-      if(isForward){ goTo('level2',{x:1,y:5}); ensureQuest('ogre','Defeat the Ogre'); return; }
-    }
-    else if(state.room==='level2'){
-      if(isBack){    goTo('level1',{x:W-2,y:5}); return; }
-      if(isForward){ goTo('shop',{x:1,y:5}); return; }
-    }
-    else if(state.room==='shop'){
-      if(isBack){    goTo('level2',{x:W-2,y:5}); return; }
-      if(isForward){ goTo('level3',{x:1,y:5}); ensureQuest('bridge','Resolve the Bridge'); return; }
-    }
-    else if(state.room==='level3'){
-      if(isBack){    goTo('shop',{x:W-2,y:5}); return; }
-      if(isForward){ goTo('level4',{x:1,y:5}); ensureQuest('pages','Collect 3 Arcane Pages'); return; }
-    }
-    else if(state.room==='level4'){
-      if(isBack){    goTo('level3',{x:W-2,y:5}); return; }
-      if(isForward){ goTo('level5',{x:1,y:5}); ensureQuest('lich','Defeat the Budget Lich'); return; }
-    }
-    else if(state.room==='level5'){
-      if(isBack){    goTo('level4',{x:W-2,y:5}); return; }
-      if(isForward){ goTo('tavern',{x:1,y:5}); return; }
-    }
-    else if(state.room==='tavern'){
-      if(isBack){    goTo('level5',{x:W-2,y:5}); return; }
-    }
-
-    banner('system','The door is stubborn. It probably leads back.');
-    return;
-  }
-
-  // NPC talk
-  for(const [cx,cy] of [[x,y],[x+1,y],[x-1,y],[x,y+1],[x,y-1]]){
-    const npc=rooms[state.room].npcs[key(cx,cy)];
-    if(npc){
-      openDialog(npc.name,'');
-      const say=(t,type='dialog')=>{ dialogText.textContent=t; logEntry(type,t,npc.portrait); };
-      const choose=(arr)=>{ dialogChoices.innerHTML=''; arr.forEach(o=>addChoice(o.label,o.hint,()=>o.action())); };
-      npc.script(say,choose);
-      return;
-    }
-  }
-
-  logEntry('system','There is nothing obvious to use here.');
-}
-
 function goTo(roomId, pos){
+  __roomLockUntil = performance.now() + 220;
   state.room = roomId;
   if(!state.seen[state.room]) state.seen[state.room]=new Set();
   logEntry('system',`You enter ${roomId}.`);
-  state.pos = {x:pos.x, y:pos.y}; reveal(state.pos.x,state.pos.y);
+  state.pos = {x:pos.x, y:pos.y};
+  reveal(state.pos.x,state.pos.y);
+
   if(state.ally && state.allyPos){
     const spot = freeAdjTo(state.pos.x, state.pos.y);
     state.allyPos = spot ? spot : {x:state.pos.x, y:state.pos.y};
   }
   applyRoomTheme();
-  playMusicFor(state.room);
+  //playMusicFor(state.room);
   render();
   updateTavernFastTravel();
+
+  if (isDoor(state.pos.x, state.pos.y)){
+    state.pos.x = clamp(state.pos.x - 1, 0, W-1);
+  }
+  state.lastDir = {x:-1, y:0};
 }
 
 function tryPick(){
@@ -2452,15 +2541,28 @@ function usePotion(){
 }
 
 function showLevelUp(){
-  state.level+=1; state.hpMax+=5; state.ac+=1; state.hp=state.hpMax;
-  document.getElementById('lvlup-details').textContent=`You reached level ${state.level}! +5 HP, +1 AC.`;
+  state.level += 1;
+  state.hpMax  += 5;
+  state.ac     += 1;
+  state.hp      = state.hpMax;
+
+  updateHP();       
+  renderHUD();       
+
+  document.getElementById('lvlup-details').textContent =
+    `You reached level ${state.level}! +5 HP, +1 AC.`;
   document.getElementById('lvlup').classList.add('show');
 }
-document.getElementById('lvlup-continue').onclick=()=>{
+
+function uiBlocked(){
+  return document.querySelector('.overlay.show') !== null;
+}
+
+document.getElementById('lvlup-continue').onclick = () => {
   document.getElementById('lvlup').classList.remove('show');
-  goTo('level2',{x:1,y:5});
-  ensureQuest('ogre','Defeat the Ogre');
-  banner('system','Level 2 unlocked.');
+  banner('system','Level up! The next area is unlocked — use the door when you’re ready.');
+  // (Optionally keep ensureQuest here if you want the Ogre quest to appear now)
+  // ensureQuest('ogre','Defeat the Ogre');
 };
 
 function countPotions(){ const p=state.inventory.find(i=>i.id==='potion'); return p? (p.qty||1) : 0; }
@@ -2502,7 +2604,7 @@ function resetGame(){
 
   renderHUD(); renderQuests(); render(); fitScale();
   applyRoomTheme();
-  playMusicFor(state.room);
+  //playMusicFor(state.room);
   updateTavernFastTravel();
   //logEntry('dialog','Sage: A red fiend lurks east. End it.','#7fb7ff');
 }
@@ -2534,29 +2636,33 @@ document.getElementById('tavernBtn').onclick = () => {
 /* =========================================================
    INPUTS
    ========================================================= */
-function bindInputs(){
-  window.addEventListener('keydown',e=>{
-    if(document.getElementById('dialog').classList.contains('show')) return;
+    function bindInputs(){
+    window.addEventListener('keydown', e=>{
+    if (e.repeat) return;             // <- ignore key auto-repeat
+    if (uiBlocked() || roomLocked()) return;
+    if (document.getElementById('dialog').classList.contains('show')) return;
+
     switch(e.key){
-      case'ArrowUp':case'w':case'W': tryMove(0,-1); break;
-      case'ArrowDown':case's':case'S': tryMove(0, 1); break;
-      case'ArrowLeft':case'a':case'A': tryMove(-1,0); break;
-      case'ArrowRight':case'd':case'D': tryMove(1,0); break;
-      case'e':case'E': tryUse(); break;
-      case' ': tryPick(); e.preventDefault(); break;
-      case'f':case'F': tryFight(); break;
-      case'h':case'H': usePotion(); break;
-      case't':case'T':
+        case'ArrowUp':case'w':case'W': tryMove(0,-1); break;
+        case'ArrowDown':case's':case'S': tryMove(0, 1); break;
+        case'ArrowLeft':case'a':case'A': tryMove(-1,0); break;
+        case'ArrowRight':case'd':case'D': tryMove(1,0); break;
+        case'e':case'E': tryUse(); break;
+        case' ': tryPick(); e.preventDefault(); break;
+        case'f':case'F': tryFight(); break;
+        case'h':case'H': usePotion(); break;
+        case't':case'T':
         if(state.flags.lichDefeated && state.room!=='tavern'){ goTo('tavern', {x:1,y:5}); }
         else if(!state.flags.lichDefeated){ banner('dialog','Beat the Budget Lich to unlock the tavern.'); }
         break;
     }
-  });
+    });
 
   const dpadEl = document.getElementById('dpad');
   let lastPressTs = 0;
 
   function handleDpadPress(e){
+    if (uiBlocked() || roomLocked()) return;
     const btn = e.target.closest('[data-a]');
     if(!btn) return;
     const now = performance.now();
