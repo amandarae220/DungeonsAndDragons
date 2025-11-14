@@ -2144,7 +2144,7 @@ function tryUse(){
   }
 
   // 3) Door handling (same as before)
-  const door = adjacentDoorFrom(state.pos);
+  const door = doorUnderOrAdjacent(state.pos);
 
   // If standing ON a door tile, force the player to step off and face it.
   if (!door){
