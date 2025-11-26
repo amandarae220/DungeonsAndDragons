@@ -86,16 +86,16 @@ body {
 }
 /* Ultra-narrow phones: stack title and buttons */
 @media (max-width: 380px){
-  :root{ --hdr-h: 92px; }
-  .appbar{ flex-wrap:wrap; row-gap:6px; }
-  .appbar-title{ flex:1 1 100%; font-size:20px; }
-  .appbar-actions{ width:100%; justify-content:space-between; }
+  :root{ --hdr-h: 60px; }
+  .appbar{ flex-wrap:nowrap; row-gap:0; padding:6px 8px; align-items:center; }
+  .appbar-title{ flex:1 1 auto; font-size:18px; line-height:1.05; }
+  .appbar-actions{ width:auto; justify-content:flex-end; }
   .appbar-actions .btn{
-    width:calc(50% - 4px);
+    width:auto; min-width:44px;
     text-align:center;
-    white-space:normal;
-    line-height:1.15;
-    padding:8px 10px;
+    white-space:nowrap;
+    line-height:1.1;
+    padding:6px 8px;
   }
 }
 
@@ -140,6 +140,10 @@ body {
 .legend{
   display:flex; flex-wrap:wrap; gap:8px; margin-top:6px;
   font-size:13px; color:var(--muted);
+  width:100%;
+  justify-content:center;
+  padding:4px 6px 0;
+  box-sizing:border-box;
 }
 .legend .key{
   display:inline-flex; align-items:center; gap:6px;
@@ -166,7 +170,6 @@ body {
   position:relative;
 }
 .floor  { background:#171a22; }
-.door   { background:#3b2b1a; }
 
 /* Door visuals */
 .cell.door{
@@ -302,6 +305,7 @@ body {
 .portrait{
   width:18px; height:18px; flex:0 0 18px; min-width:18px; border-radius:3px;
   background:#555;
+  align-self: center;
 }
 .bubble{
   flex:1 1 auto; min-width:0; word-break:break-word;
@@ -348,7 +352,7 @@ body {
 .d-big{ min-width:96px; }
 .pad-actions{ display:flex; flex-direction:column; gap:8px; }
 .act-btn{
-  min-width:164px; min-height:48px; padding:10px 12px;
+  min-width:125px; min-height:48px; padding:10px 12px;
   color:var(--ink); background:#0f1117; border:1px solid var(--border); border-radius:12px;
   display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;
 }
@@ -589,7 +593,7 @@ details.accordion[open]>summary{border-bottom:1px solid var(--border)}
       "map"
       "dpad"
       "side";
-    padding-top:6px;
+    padding:8px 10px 14px;
   }
   #hudPanel{ display:none !important; }
   #hudPanelSide{ display:block; }
@@ -606,16 +610,20 @@ details.accordion[open]>summary{border-bottom:1px solid var(--border)}
   padding-bottom: 1rem;
 }
 
-.map{
-  position: relative;
-  z-index: 1;
-  max-height: calc(100svh - var(--hdr-h) - var(--dpad-h) - 28px); 
-  overflow: hidden;
-}
+  .map{
+    position: relative;
+    z-index: 1;
+    /* Let content size naturally so legend stays visible; page can scroll */
+    max-height: none;
+    overflow: visible;
+    padding:6px; /* prevent bleed to edges on very small screens */
+    padding-bottom:12px; /* keep legend visible */
+    margin-bottom:12px; /* space above D-pad */
+  }
 
-.wrap{
-  grid-template-rows: auto max-content 1fr;
-}
+  .wrap{
+    grid-template-rows: auto max-content 1fr;
+  }
 }
 
 /* =========================================================
@@ -654,6 +662,75 @@ details.accordion[open]>summary{border-bottom:1px solid var(--border)}
   h3#logTitle { font-size: 14px;}
   header.appbar { font-size: 14px; }
   }
+
+/* =========================================================
+   TABLETS (e.g., iPad): wider map + right rail
+   ========================================================= */
+@media (min-width: 768px) and (max-width: 1180px){
+  :root{
+    --sideW: 360px;
+  }
+  .wrap{
+    max-width: 1200px;
+    margin: 0 auto;
+    grid-template-columns: minmax(0,1.5fr) minmax(0,1fr);
+    grid-template-rows: auto auto auto;
+    grid-template-areas:
+      "map bag"
+      "map dpad"
+      "log log";
+    padding:16px;
+    gap:12px 16px;
+    align-items:start;
+  }
+  /* Use the compact HUD/side column; hide left HUD */
+  #hudPanel{ display:none !important; }
+  #sideCol{ display:contents; }
+  #hudPanelSide{
+    display:block !important; /* override inline display:none */
+    grid-area: bag;
+    align-self:start;
+    width:100%;
+    max-width:420px;
+    margin-top:0;
+  }
+  /* Hide Codex button in tablet bag column to compact the card */
+  #hudPanelSide #codexBtn_s,
+  #hudPanel #codexBtn{ display:none !important; }
+  #mobileTabs{ display:none !important; }
+  #logPanel{
+    grid-area: log;
+    display:flex;
+    flex-direction:column;
+    min-height:0;
+    overflow:auto;
+    margin-top:0;
+    min-height:40vh;
+  }
+  #log{ flex:1 1 auto; min-height:0; }
+  /* Map fills height nicely */
+  .map{
+    align-self:stretch;
+    height: fit-content;
+    max-height: 64vh;
+    padding:12px;
+    width: 100%;
+    grid-area: map;
+  }
+  /* Show on-screen D-pad for touch users, scaled down */
+  #dpad{
+    display:flex !important;
+    grid-area: dpad;
+    justify-content:center;
+    align-items:flex-start;
+    transform: scale(.82);
+    transform-origin: top left;
+    padding:6px 0 0;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .mobile-tabs{ display:flex; margin-bottom:8px; }
+}
 
 /* =========================================================
    DESKTOP/LAPTOP: Equal heights
@@ -927,6 +1004,17 @@ body[data-room="shop"] .cell.door::after{ box-shadow:0 0 10px rgba(255,220,140,.
   </div>
 </div>
 
+<!-- DEFEAT MODAL -->
+<div id="death" class="overlay" role="dialog" aria-modal="true">
+  <div class="card">
+    <h2>💀 You Died</h2>
+    <p id="death-details">Your run has ended. Ready to try again?</p>
+    <div class="actions">
+      <button id="death-restart" class="btn">Restart Run</button>
+    </div>
+  </div>
+</div>
+
 <!-- SETTINGS MODAL -->
 <div id="settings" class="overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
   <div class="card">
@@ -1022,6 +1110,7 @@ const TYPE_COLOR = {
   door:'#ffd166',
   system:'#9aa3ae'
 };
+const FOCUSABLE_SELECTOR = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
 
 const pick = (arr)=>arr[Math.floor(Math.random()*arr.length)];
 const QUIP = {
@@ -1923,10 +2012,25 @@ function monsterFirstStrike(mon){
     state.hp = Math.max(0, state.hp - dmg);
     logEntry('combat',`${mon.name} ambushes and hits you for ${dmg}.`);
     renderVersusCard(mon, mon.name, `${mon.name} ambushes and hits you for ${dmg}.`);
+    if(state.hp <= 0){ handlePlayerDeath('ambush'); return; }
   } else {
     logEntry('combat',`${mon.name} lunges first but misses!`);
     renderVersusCard(mon, null, `${mon.name} lunges first but misses!`);
   }
+}
+
+function handlePlayerDeath(reason='defeat'){
+  logEntry('combat','You collapse! The run restarts from the beginning.');
+  banner('combat','You are defeated. Restarting the run...');
+  hideVersusCard();
+  document.querySelectorAll('.overlay').forEach(o=>o.classList.remove('show'));
+  const dialogElLocal = document.getElementById('dialog');
+  if(dialogElLocal){
+    dialogElLocal.classList.remove('show');
+    dialogChoices.innerHTML = '';
+    dialogText.textContent = '';
+  }
+  showDeathModal(reason);
 }
 
 function checkAggro(){
@@ -2310,12 +2414,24 @@ function openDialog(title,text){
   document.getElementById('dialog-title').textContent=title||'Conversation';
   dialogText.textContent=text||'';
   dialogChoices.innerHTML='';
+  dialogFocusIdx = 0;
   dialogEl.classList.add('show');
+  // If there are no choices yet, focus the close button for keyboard users.
+  const closeBtn = document.getElementById('dialog-leave');
+  requestAnimationFrame(()=>{
+    const firstChoice = dialogChoices.querySelector('.choice-btn');
+    if(firstChoice){ firstChoice.focus({preventScroll:true}); }
+    else closeBtn?.focus({preventScroll:true});
+  });
 }
 function addChoice(label,hint,cb){
   const b=document.createElement('button'); b.className='choice-btn';
   b.textContent=label; if(hint) b.title=hint; b.onclick=()=>cb();
   dialogChoices.appendChild(b);
+  // When the dialog first opens, focus the first choice for keyboard users.
+  if(dialogChoices.childElementCount === 1){
+    requestAnimationFrame(()=>b.focus({preventScroll:true}));
+  }
 }
 
 /* =========================================================
@@ -2438,6 +2554,7 @@ function openCombatMenu(tKey, target){
       const dmg=rand(1,4)+2; state.hp=Math.max(0,state.hp-dmg);
       combatLine(`${target.name} hits you for ${dmg}. (You: ${state.hp}/${state.hpMax})`,'enemy');
       AudioEngine.hurt();
+      if(state.hp<=0){ handlePlayerDeath('flee'); return; }
     } else {
       combatLine(`${target.name} swings and misses as you retreat.`,'miss');
     }
@@ -2500,11 +2617,7 @@ function playerAttack(tKey,target,opts){
     const line = `${target.name} hits you for ${dmg}.`;
     logEntry('combat', line);
     renderVersusCard(target, target.name, line);
-    if(state.hp<=0){
-      banner('combat','You fall… but the autosave fairy rewinds time.');
-      state.hp=Math.ceil(state.hpMax/2); state.pos={x:2,y:2}; reveal(state.pos.x,state.pos.y);
-      if(state.ally && state.allyPos){ const spot = freeAdjTo(state.pos.x, state.pos.y); state.allyPos = spot?spot:{x:state.pos.x, y:state.pos.y}; }
-    }
+    if(state.hp<=0){ handlePlayerDeath('combat'); return; }
   } else {
     const line = `${target.name} misses!`;
     logEntry('combat', pick(QUIP.enemyMiss));
@@ -2541,17 +2654,22 @@ function usePotion(){
 }
 
 function showLevelUp(){
+  const prevHp = state.hp;
   state.level += 1;
   state.hpMax  += 5;
   state.ac     += 1;
-  state.hp      = state.hpMax;
+  // Preserve current HP so damage carries across rooms instead of auto-healing
+  state.hp      = Math.min(prevHp, state.hpMax);
 
   updateHP();       
   renderHUD();       
 
   document.getElementById('lvlup-details').textContent =
     `You reached level ${state.level}! +5 HP, +1 AC.`;
-  document.getElementById('lvlup').classList.add('show');
+  const lvlupEl = document.getElementById('lvlup');
+  lvlupEl.classList.add('show');
+  const btn = document.getElementById('lvlup-continue');
+  requestAnimationFrame(()=>btn?.focus({preventScroll:true}));
 }
 
 function uiBlocked(){
@@ -2587,7 +2705,22 @@ document.getElementById('vict-replay').onclick=()=>{
   banner('dialog','New run! The dungeon forgot you. Again.');
 };
 
-function resetGame(){
+function showDeathModal(reason='defeat'){
+  const txt = document.getElementById('death-details');
+  if(txt){
+    const msg = (reason === 'ambush')
+      ? 'An ambush drops you to 0 HP.'
+      : 'Your HP hit zero.';
+    txt.textContent = `${msg} The run will restart.`;
+  }
+  document.getElementById('death').classList.add('show');
+}
+document.getElementById('death-restart').onclick=()=>{
+  document.getElementById('death').classList.remove('show');
+  resetGame({ showWelcome:true });
+};
+
+function resetGame(opts={}){
   state.level=1; state.hpMax=10; state.hp=10; state.ac=12;
   state.str=+2; state.dex=+1; state.atk=+4; state.cha=+1;   
   state.gold=0; state.inventory=[{id:'potion',name:'Healing Potion',qty:1,type:'potion'}];
@@ -2606,7 +2739,9 @@ function resetGame(){
   applyRoomTheme();
   //playMusicFor(state.room);
   updateTavernFastTravel();
-  //logEntry('dialog','Sage: A red fiend lurks east. End it.','#7fb7ff');
+  if(opts.showWelcome){
+    document.getElementById('welcome').classList.add('show');
+  }
 }
 
 /* =========================================================
@@ -2636,11 +2771,11 @@ document.getElementById('tavernBtn').onclick = () => {
 /* =========================================================
    INPUTS
    ========================================================= */
-    function bindInputs(){
-    window.addEventListener('keydown', e=>{
-    if (e.repeat) return;             // <- ignore key auto-repeat
-    if (uiBlocked() || roomLocked()) return;
-    if (document.getElementById('dialog').classList.contains('show')) return;
+function bindInputs(){
+  window.addEventListener('keydown', e=>{
+  if (e.repeat) return;             // <- ignore key auto-repeat
+  if (uiBlocked() || roomLocked()) return;
+  if (document.getElementById('dialog').classList.contains('show')) return;
 
     switch(e.key){
         case'ArrowUp':case'w':case'W': tryMove(0,-1); break;
@@ -2691,6 +2826,84 @@ document.getElementById('tavernBtn').onclick = () => {
     lastTouchTime = now;
   }, {passive:false});
 }
+
+// Dialog keyboard navigation (ArrowUp/ArrowDown + Enter/Space)
+let dialogFocusIdx = 0;
+function dialogChoicesList(){
+  const list = Array.from(dialogChoices.querySelectorAll('.choice-btn'));
+  const closeBtn = document.getElementById('dialog-leave');
+  if(closeBtn) list.push(closeBtn);
+  return list;
+}
+function focusDialogChoice(idx){
+  const list = dialogChoicesList();
+  if(!list.length) return;
+  dialogFocusIdx = ((idx % list.length) + list.length) % list.length;
+  list[dialogFocusIdx].focus({preventScroll:true});
+}
+window.addEventListener('keydown', e=>{
+  if(!dialogEl.classList.contains('show')) return;
+  const list = dialogChoicesList();
+  if(!list.length) return;
+
+  if(e.key === 'ArrowDown'){
+    e.preventDefault();
+    focusDialogChoice(dialogFocusIdx + 1);
+  } else if(e.key === 'ArrowUp'){
+    e.preventDefault();
+    focusDialogChoice(dialogFocusIdx - 1);
+  } else if(e.key === 'Enter' || e.key === ' '){
+    const active = document.activeElement;
+    if(dialogChoices.contains(active)){
+      e.preventDefault();
+      active.click();
+    } else if(active && active.id === 'dialog-leave'){
+      e.preventDefault();
+      active.click();
+    } else {
+      e.preventDefault();
+      focusDialogChoice(dialogFocusIdx);
+      dialogChoicesList()[dialogFocusIdx].click();
+    }
+  } else if(e.key === 'Escape'){
+    e.preventDefault();
+    document.getElementById('dialog-leave')?.click();
+  }
+});
+
+// Modal focus trap: keep tab/arrow focus inside the topmost visible overlay
+function activeOverlay(){
+  return document.querySelector('.overlay.show');
+}
+function focusableWithin(el){
+  return Array.from(el.querySelectorAll(FOCUSABLE_SELECTOR))
+    .filter(n=>!n.disabled && n.offsetParent !== null);
+}
+window.addEventListener('keydown', e=>{
+  const overlay = activeOverlay();
+  if(!overlay) return;
+
+  // Trap Tab focus
+  if(e.key === 'Tab'){
+    const focusables = focusableWithin(overlay);
+    if(!focusables.length){ e.preventDefault(); return; }
+    const idx = focusables.indexOf(document.activeElement);
+    const dir = e.shiftKey ? -1 : 1;
+    const nextIdx = idx === -1 ? (dir === 1 ? 0 : focusables.length-1)
+      : (idx + dir + focusables.length) % focusables.length;
+    e.preventDefault();
+    focusables[nextIdx].focus({preventScroll:true});
+  }
+
+  // If arrow keys would move focus outside, redirect to first focusable
+  if(e.key.startsWith('Arrow')){
+    const focusables = focusableWithin(overlay);
+    if(!overlay.contains(document.activeElement) && focusables.length){
+      e.preventDefault();
+      focusables[0].focus({preventScroll:true});
+    }
+  }
+}, true);
 
 /* =========================================================
    MOBILE TABS
@@ -2932,8 +3145,9 @@ welcomeMute.addEventListener('click', () => {
   logEntry('dialog', 'Sage: A red fiend lurks east. End it.', '#7fb7ff');
 });
 
-
 bootstrap();
+// Focus the start button on load for keyboard users
+requestAnimationFrame(()=>welcomeMute.focus({preventScroll:true}));
 </script>
 </body>
 </html>
