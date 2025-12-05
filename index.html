@@ -378,7 +378,7 @@ body {
 .banners{
   position:fixed; left:50%; transform:translateX(-50%);
   top: calc(env(safe-area-inset-top) + var(--hdr-h) + 8px);
-  z-index:2000; width:min(92vw,640px); display:grid; gap:8px; pointer-events:none;
+  z-index:4000; width:min(92vw,640px); display:grid; gap:8px; pointer-events:none;
 }
 .banner{
   pointer-events:auto; display:flex; gap:10px; align-items:flex-start;
@@ -398,7 +398,9 @@ body {
 .overlay{
   position:fixed; inset:0; z-index:3000; display:none;
   align-items:center; justify-content:center; background:rgba(0,0,0,.55);
-  padding:20px; backdrop-filter: blur(2px);
+  padding:20px;
+  backdrop-filter: none;          /* Keep banners crisp when a modal is open */
+  -webkit-backdrop-filter: none;
 }
 .overlay.show{ display:flex; }
 .overlay .card{
@@ -1227,12 +1229,22 @@ function ensureCombatFeed(){
   if(!feed){
     const box = document.createElement('div');
     box.id = 'combatFeed';
-    box.className = 'combat-feed';
+    box.className = 'combat-feed show'; // default to visible during combat
     box.setAttribute('aria-live','polite');
     dialogChoices.insertAdjacentElement('afterend', box);
     feed = box;
+  } else {
+    feed.classList.add('show');
   }
   return feed;
+}
+
+function clearCombatFeed(){
+  const feed = document.getElementById('combatFeed');
+  if(feed){
+    feed.innerHTML = '';
+    feed.classList.remove('show');
+  }
 }
 
 function combatLine(text, cls='system'){
@@ -1241,6 +1253,7 @@ function combatLine(text, cls='system'){
   div.className = `line ${cls}`;
   div.textContent = text;
   feed.appendChild(div);
+  feed.classList.add('show');
   while(feed.childElementCount > 40) feed.removeChild(feed.firstChild);
   feed.scrollTop = feed.scrollHeight;
   logEntry(cls === 'enemy' ? 'combat' : 'system', text);
@@ -1327,6 +1340,7 @@ function level1(){
           say(`Bard: Alright, this one’s called *Ballad of the Brave-ish Adventurer.*`, "dialog");
           say(`Bard: It’s got heart, a few wrong notes, and a surprisingly catchy chorus.`, "dialog");
           logEntry('loot', `You feel inspired! You pocket a Lute Pick (+1 attack).`);
+          banner('loot','Bardic inspiration! ATK +1 (Lute Pick).');
           state.inventory.push({ id: 'lute_pick', name: 'Lute Pick (+1 attack)', type: 'charm' });
           state.atk += 1; renderHUD();
           main();
@@ -1479,8 +1493,8 @@ function shop(){
                   state.gold-=10;
                   const p=state.inventory.find(i=>i.id==='potion');
                   if(p) p.qty=(p.qty||1)+1; else state.inventory.push({id:'potion',name:'Healing Potion',qty:1,type:'potion'});
-                  renderHUD(); logEntry('loot','Purchased Healing Potion.');
-                } else logEntry('system','Not enough gold.');
+                  renderHUD(); logEntry('loot','Purchased Healing Potion.'); banner('loot','Purchased Healing Potion (10g).');
+                } else { logEntry('system','Not enough gold.'); banner('system','Not enough gold for that purchase.'); }
                 showBuy();
               }
             },
@@ -1489,8 +1503,8 @@ function shop(){
                 if(state.gold>=30){
                   state.gold-=30; state.atk+=1;
                   state.inventory.push({id:'dagger',name:'Dagger (+1 ATK)',type:'weapon'});
-                  renderHUD(); logEntry('loot','Purchased Dagger. ATK +1.');
-                } else logEntry('system','Not enough gold.');
+                  renderHUD(); logEntry('loot','Purchased Dagger. ATK +1.'); banner('loot','Purchased Dagger (+1 ATK).');
+                } else { logEntry('system','Not enough gold.'); banner('system','Not enough gold for that purchase.'); }
                 showBuy();
               }
             },
@@ -1499,8 +1513,8 @@ function shop(){
                 if(state.gold>=35){
                   state.gold-=35; state.ac+=1;
                   state.inventory.push({id:'leather',name:'Leather Armor (+1 AC)',type:'armor'});
-                  renderHUD(); logEntry('loot','Purchased Leather Armor. AC +1.');
-                } else logEntry('system','Not enough gold.');
+                  renderHUD(); logEntry('loot','Purchased Leather Armor. AC +1.'); banner('loot','Purchased Leather Armor (+1 AC).');
+                } else { logEntry('system','Not enough gold.'); banner('system','Not enough gold for that purchase.'); }
                 showBuy();
               }
             },
@@ -1533,9 +1547,11 @@ function shop(){
             state.gold += 15;
             renderHUD();
             logEntry('loot', 'Sold 1 Arcane Page for 15g.');
+            banner('loot','Sold an Arcane Page (+15g).');
           }
         } else {
           logEntry('system', 'You have no Arcane Pages to sell.');
+          banner('system','No Arcane Pages to sell.');
         }
         showSell();
       }
@@ -1552,9 +1568,11 @@ function shop(){
             state.atk = Math.max(state.atk - 1, +0 + state.str + 2);
             renderHUD();
             logEntry('loot', 'Sold Dagger for 15g.');
+            banner('loot','Sold Dagger (+15g).');
           }
         } else {
           logEntry('system', 'You have no Dagger to sell.');
+          banner('system','No Dagger to sell.');
         }
         showSell();
       }
@@ -1571,9 +1589,11 @@ function shop(){
             state.atk = Math.max(state.atk - 1, +0 + state.str + 2);
             renderHUD();
             logEntry('loot', 'Sold Lute Pick for 10g.');
+            banner('loot','Sold Lute Pick (+10g).');
           }
         } else {
           logEntry('system', 'You have no Lute Pick to sell.');
+          banner('system','No Lute Pick to sell.');
         }
         showSell();
       }
@@ -1591,8 +1611,8 @@ function shop(){
                   p.qty-=2; if(p.qty<=0) state.inventory = state.inventory.filter(i=>i!==p);
                   const ex=state.inventory.find(i=>i.id==='elixir');
                   if(ex) ex.qty=(ex.qty||1)+1; else state.inventory.push({id:'elixir',name:'Elixir (10 HP)',qty:1,type:'potion10'});
-                  renderHUD(); logEntry('loot','Traded 2 Potions for 1 Elixir.');
-                } else logEntry('system','You need 2 potions.');
+                  renderHUD(); logEntry('loot','Traded 2 Potions for 1 Elixir.'); banner('loot','Trade complete: 2 Potions → 1 Elixir.');
+                } else { logEntry('system','You need 2 potions.'); banner('system','Need 2 potions to trade.'); }
                 showTrade();
               }
             },
@@ -2411,6 +2431,8 @@ document.getElementById('dialog-leave').onclick=()=>{
 };
 
 function openDialog(title,text){
+  // Opening any dialog should clear previous combat feed to avoid stale logs
+  clearCombatFeed();
   document.getElementById('dialog-title').textContent=title||'Conversation';
   dialogText.textContent=text||'';
   dialogChoices.innerHTML='';
@@ -2547,6 +2569,7 @@ function openCombatMenu(tKey, target){
 
   const feed = ensureCombatFeed();
   feed.innerHTML = "";  
+  feed.classList.add('show');
 
   addChoice("🏃 Flee (provokes)", "Attempt to flee; foe gets a free swing.", ()=>{
     const mr=rollD20(), mh=mr+target.atk;
@@ -2554,9 +2577,11 @@ function openCombatMenu(tKey, target){
       const dmg=rand(1,4)+2; state.hp=Math.max(0,state.hp-dmg);
       combatLine(`${target.name} hits you for ${dmg}. (You: ${state.hp}/${state.hpMax})`,'enemy');
       AudioEngine.hurt();
+      banner('combat',`${target.name} hits you as you flee (-${dmg} HP).`);
       if(state.hp<=0){ handlePlayerDeath('flee'); return; }
     } else {
       combatLine(`${target.name} swings and misses as you retreat.`,'miss');
+      banner('combat',`${target.name} misses your retreat.`);
     }
     dialogEl.classList.remove('show');
     render();
@@ -2584,6 +2609,7 @@ function playerAttack(tKey,target,opts){
     youHit = true;
     lastLine = `Critical! You deal massive damage.`;
     logEntry('combat', `CRIT! ${opts?.tag||''} ${pick(QUIP.crit)}`);
+    combatLine(`CRIT! You obliterate ${target.name}.`, 'crit');
     AudioEngine.hit();
   } else if(toHit>=target.ac){
     const dmg = rand(opts.dmg[0],opts.dmg[1]) + state.str;
@@ -2591,11 +2617,14 @@ function playerAttack(tKey,target,opts){
     youHit = true;
     lastLine = `Hit ${opts?.tag||''}: d20=${advRoll} → ${toHit} vs AC ${target.ac}. You deal ${Math.max(1,dmg)}.`;
     logEntry('combat', lastLine);
+    combatLine(`You hit ${target.name} for ${Math.max(1,dmg)}. (Roll ${advRoll} → ${toHit} vs AC ${target.ac})`, 'hit');
+    banner('combat',`You hit ${target.name} for ${Math.max(1,dmg)}.`);
     AudioEngine.hit();
     if(opts.extra) logEntry('combat', `Your ${opts.extra} singe the air.`);
   } else {
     lastLine = `Miss: d20=${advRoll} → ${toHit} vs AC ${target.ac}.`;
     logEntry('combat', pick(QUIP.miss));
+    combatLine(`You miss ${target.name}. (Roll ${advRoll} → ${toHit} vs AC ${target.ac})`, 'miss');
   }
 
   renderVersusCard(target, youHit ? 'You' : null, lastLine);
@@ -2616,11 +2645,14 @@ function playerAttack(tKey,target,opts){
     state.hp=Math.max(0,state.hp-dmg);
     const line = `${target.name} hits you for ${dmg}.`;
     logEntry('combat', line);
+    combatLine(`${target.name} hits you for ${dmg}. (Roll ${mr} → ${mh} vs AC ${state.ac})`, 'enemy');
+    banner('combat',`${target.name} hits you for ${dmg}.`);
     renderVersusCard(target, target.name, line);
     if(state.hp<=0){ handlePlayerDeath('combat'); return; }
   } else {
     const line = `${target.name} misses!`;
     logEntry('combat', pick(QUIP.enemyMiss));
+    combatLine(`${target.name} misses you. (Roll ${mr} → ${mh} vs AC ${state.ac})`, 'miss');
     renderVersusCard(target, null, line);
   }
   render();
@@ -2631,6 +2663,7 @@ function killMonsterAndDrop(targetKey,target){
   const R = rooms[state.room];
   delete R.monsters[targetKey];
   if(typeof target.onDefeat==='function') target.onDefeat();
+  clearCombatFeed();
 
   R.items[targetKey] = {
     id: 'coin_pouch_'+Date.now(),
